@@ -1,0 +1,28 @@
+const CORE = 'sign-core-v1', RT = 'sign-rt-v1';
+const SHELL = ['./', './index.html', './manifest.json', './icon-180.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CORE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(ks =>
+    Promise.all(ks.filter(k => k !== CORE && k !== RT).map(k => caches.delete(k)))
+  ).then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', e => {
+  const r = e.request;
+  if (r.method !== 'GET') return;                       // uploads always hit the network
+  const u = new URL(r.url);
+  if (/jsdelivr\.net|projectnaptha\.com/.test(u.hostname)) {   // OCR engine + language data
+    e.respondWith(caches.open(RT).then(async c => {
+      const hit = await c.match(r); if (hit) return hit;
+      const res = await fetch(r);
+      if (res && res.status === 200) c.put(r, res.clone());
+      return res;
+    }));
+    return;
+  }
+  e.respondWith(caches.match(r).then(hit => hit || fetch(r).then(res => {
+    const copy = res.clone(); caches.open(CORE).then(c => c.put(r, copy)); return res;
+  }).catch(() => caches.match('./index.html'))));
+});

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14254a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sign Copy">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Sign Copy Scanner</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --navy:#14254a; --gold:#c9a24a; --bg:#f3f4f7; --card:#fff;
+    --ink:#1b2233; --muted:#6b7385; --line:#e2e5ec;
+    --ok:#1f8a4c; --warn:#b3261e; --wait:#a86b00;
+  }
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    overscroll-behavior:none}
+  header{background:var(--navy);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;
+    display:flex;align-items:center;gap:10px}
+  header h1{font-size:16px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header small{display:block;color:#c8d0e3;font-size:12px;font-weight:400}
+  .ico{background:none;border:0;color:#c8d0e3;font-size:19px;padding:4px 6px;cursor:pointer}
+  .badge{background:var(--gold);color:var(--navy);font-size:12px;font-weight:700;
+    padding:3px 9px;border-radius:999px}
+  main{flex:1;overflow-y:auto;padding:16px;padding-bottom:calc(28px + env(safe-area-inset-bottom))}
+  .screen{display:none}.screen.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  h2{font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+  button.big{width:100%;padding:17px;border:0;border-radius:14px;background:var(--gold);
+    color:var(--navy);font-size:17px;font-weight:700;font-family:inherit;cursor:pointer}
+  button.big.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  button.big:disabled{opacity:.5}
+  label{display:block;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:10px;
+    font-size:16px;font-family:inherit;background:#fff;color:var(--ink)}
+  input:focus{outline:2px solid var(--gold);outline-offset:-1px}
+  .field{margin-bottom:14px}
+  .tag{font-size:11px;margin-left:8px;font-weight:600}
+  video,#shot{width:100%;border-radius:10px;display:block;background:#000}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px}
+  .fname{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--navy);
+    background:#f7f8fb;border:1px solid var(--line);border-radius:10px;padding:10px 12px;word-break:break-all}
+  .prog{height:4px;background:#e7eaf0;border-radius:99px;overflow:hidden;margin:12px 0 8px}
+  .prog i{display:block;height:100%;width:0;background:var(--gold);transition:width .25s}
+  .q{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .q:last-child{border:0}
+  .q small{display:block;color:var(--muted);font-size:12px}
+  .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
+  .gd{display:flex;align-items:center;gap:10px;padding:11px 0;font-size:15px;cursor:pointer}
+  .toast{position:fixed;left:16px;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));
+    background:var(--navy);color:#fff;border-radius:12px;padding:13px 15px;font-size:14px;
+    opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;z-index:9}
+  .toast.on{opacity:1;transform:none}
+  .toast.bad{background:var(--warn)}.toast.good{background:var(--ok)}
+</style>
+</head>
+<body>
+<header>
+  <div style="flex:1;min-width:0">
+    <h1>Sign Copy</h1>
+    <small id="sub">—</small>
+  </div>
+  <span class="badge" id="qbadge" style="display:none">0</span>
+  <button class="ico" id="navQ">&#9776;</button>
+  <button class="ico" id="navS">&#9881;</button>
+</header>
+
+<main>
+  <section class="screen on" id="scHome">
+    <div class="card" id="camCard">
+      <video id="cam" playsinline muted autoplay></video>
+      <div class="hint">Lay the signed copy flat. Fill the frame. Keep the top edge straight.</div>
+    </div>
+    <button class="big" id="bShoot">Capture invoice</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="bPick">Use photo / camera roll</button>
+    <input type="file" id="file" accept="image/*" capture="environment" hidden>
+  </section>
+
+  <section class="screen" id="scRead">
+    <div class="card">
+      <img id="shot" alt="">
+      <div class="prog"><i id="bar"></i></div>
+      <div class="hint" id="readMsg">Reading the invoice…</div>
+    </div>
+  </section>
+
+  <section class="screen" id="scConfirm">
+    <div class="card">
+      <h2>Check before upload</h2>
+      <div class="field"><label>Invoice number <span class="tag" id="tInv"></span></label>
+        <input id="fInv" autocomplete="off" autocapitalize="characters"></div>
+      <div class="field"><label>Party name <span class="tag" id="tParty"></span></label>
+        <input id="fParty" autocomplete="off"></div>
+      <div class="field"><label>Invoice date <span class="tag" id="tDate"></span></label>
+        <input id="fDate" autocomplete="off" placeholder="DD-MM-YYYY"></div>
+      <div class="fname" id="fname">—</div>
+    </div>
+    <button class="big" id="bUp">Upload to board</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="bRetake">Retake</button>
+  </section>
+
+  <section class="screen" id="scQueue">
+    <div class="card"><h2>Waiting to upload</h2><div id="qlist"></div></div>
+    <button class="big" id="bFlush">Try again now</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="bBack1">Back to camera</button>
+  </section>
+
+  <section class="screen" id="scSet">
+    <div class="card">
+      <h2>Sign in</h2>
+      <div class="field"><label>Login ID</label><input id="sId" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input id="sPw" type="password" autocomplete="current-password"></div>
+      <div class="hint">The same ID and password used on the godown board.</div>
+    </div>
+    <div class="card" id="gdCard" style="display:none">
+      <h2>Godown</h2><div id="gdList"></div>
+    </div>
+    <div class="card">
+      <h2>Board address</h2>
+      <div class="field"><label>Web app URL</label><input id="sUrl" autocomplete="off"></div>
+      <div class="hint">Already set for Ibaadat. Change it only if the board moves.</div>
+    </div>
+    <button class="big" id="bSave">Save &amp; sign in</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="bBack2">Back to camera</button>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+/* The board this scanner feeds. Overridable in Settings if it ever moves. */
+const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbwxgJfYStlWBqdWcs3aB7W3m5-188rNAm0eZYXG-IqSOA8xHpVfcv1qRcq_c326sUqi/exec';
+
+const $ = id => document.getElementById(id);
+const show = id => { document.querySelectorAll('.screen').forEach(s => s.classList.remove('on')); $(id).classList.add('on'); };
+let tT; function toast(m, k){ const t=$('toast'); t.textContent=m; t.className='toast on'+(k?' '+k:'');
+  clearTimeout(tT); tT=setTimeout(()=>t.className='toast',3400); }
+
+/* ---- settings, with the godown taken from the link ---- */
+const P = {
+  get url(){ return localStorage.getItem('url') || DEFAULT_URL }, set url(v){ localStorage.setItem('url', v.trim()) },
+  get id(){ return localStorage.getItem('id') || '' },  set id(v){ localStorage.setItem('id', v.trim()) },
+  get pw(){ return localStorage.getItem('pw') || '' },  set pw(v){ localStorage.setItem('pw', v) },
+  get tok(){ return localStorage.getItem('tok') || '' },set tok(v){ localStorage.setItem('tok', v) },
+  get who(){ return localStorage.getItem('who') || '' },set who(v){ localStorage.setItem('who', v) },
+  get gd(){ return localStorage.getItem('gd') || '' },  set gd(v){ localStorage.setItem('gd', v) },
+  get gdName(){ return localStorage.getItem('gdName') || '' }, set gdName(v){ localStorage.setItem('gdName', v) },
+  get list(){ try { return JSON.parse(localStorage.getItem('list')||'[]') } catch(e){ return [] } },
+  set list(v){ localStorage.setItem('list', JSON.stringify(v)) }
+};
+
+/* ?g=o13 pins this shortcut to one godown — one link per godown phone. */
+const qs = new URLSearchParams(location.search);
+if (qs.get('g')) P.gd = qs.get('g');
+if (qs.get('id') && !P.id) P.id = qs.get('id');
+
+function subtitle(){
+  $('sub').textContent = P.gd
+    ? (P.gdName || P.gd) + (P.who ? ' · ' + P.who : '')
+    : 'Tap the gear to sign in';
+}
+
+/* ---- the board API: simple POST, no preflight ---- */
+async function call(body){
+  const r = await fetch(P.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+const expired = e => /session|sign in|log in|expired/i.test(e || '');
+
+async function signIn(){
+  const r = await call({ action:'login', id:P.id, password:P.pw });
+  if(!r.ok) throw new Error(r.error || 'login refused');
+  P.tok = r.data.token;
+  const c = await call({ action:'config', token:P.tok });
+  if(c.ok && c.data && c.data.godowns){
+    P.who = c.data.name || P.id;
+    P.list = c.data.godowns.map(g => ({ key:g.key, label:g.name + ' — ' + g.division }));
+    const mine = P.list.filter(g => g.key === P.gd)[0];
+    if(mine) P.gdName = mine.label;
+    else if(P.list.length === 1){ P.gd = P.list[0].key; P.gdName = P.list[0].label; }
+  }
+  subtitle();
+}
+
+async function send(job){
+  if(!P.tok) await signIn();
+  const body = {
+    action:'upload', token:P.tok, godown:P.gd, date:job.day, section:'signcopy',
+    name:job.filename, mime:'application/pdf', data:job.pdf,
+    bill:job.invoice, note:job.party, by:P.who
+  };
+  let r = await call(body);
+  if(!r.ok && expired(r.error)){ await signIn(); body.token = P.tok; r = await call(body); }
+  if(!r.ok) { const e = new Error(r.error || 'rejected'); e.rejected = true; throw e; }
+  return r.data;
+}
+
+/* ---- camera ---- */
+let stream = null;
+async function startCam(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia(
+      { video: { facingMode: { ideal:'environment' }, width:{ideal:2560}, height:{ideal:1440} } });
+    $('cam').srcObject = stream;
+  }catch(e){
+    $('camCard').innerHTML = '<div class="empty">Camera not available here.<br>Use the button below.</div>';
+  }
+}
+startCam();
+
+/* ---- image prep: greyscale + contrast stretch ---- */
+function prep(src, w, h){
+  const MAX = 2000, s = Math.min(1, MAX / Math.max(w,h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w*s); c.height = Math.round(h*s);
+  const x = c.getContext('2d'); x.drawImage(src, 0,0, c.width, c.height);
+  const d = x.getImageData(0,0,c.width,c.height), p = d.data, hist = new Uint32Array(256);
+  for(let i=0;i<p.length;i+=4){ const g=(p[i]*0.299+p[i+1]*0.587+p[i+2]*0.114)|0; p[i]=p[i+1]=p[i+2]=g; hist[g]++; }
+  const tot=c.width*c.height; let a=0, lo=0, hi=255;
+  for(let i=0;i<256;i++){ a+=hist[i]; if(a>tot*0.02){ lo=i; break; } }
+  a=0; for(let i=255;i>=0;i--){ a+=hist[i]; if(a>tot*0.02){ hi=i; break; } }
+  const sp = Math.max(1, hi-lo);
+  for(let i=0;i<p.length;i+=4){ let v=(p[i]-lo)*255/sp; v=v<0?0:v>255?255:v; p[i]=p[i+1]=p[i+2]=v; }
+  x.putImageData(d,0,0); return c;
+}
+
+let current = null;
+async function handle(src, w, h){
+  show('scRead'); $('bar').style.width='8%'; $('readMsg').textContent='Cleaning up the image…';
+  const c = prep(src, w, h);
+  const jpeg = c.toDataURL('image/jpeg', 0.82);
+  $('shot').src = jpeg; current = { jpeg, w:c.width, h:c.height };
+  await ocr(c);
+}
+$('bShoot').onclick = () => {
+  const v = $('cam'); if(!v.videoWidth){ toast('Camera not ready', 'bad'); return; }
+  const c = document.createElement('canvas'); c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0); handle(c, c.width, c.height);
+};
+$('bPick').onclick = () => $('file').click();
+$('file').onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const img = new Image(); img.onload = () => handle(img, img.naturalWidth, img.naturalHeight);
+  img.src = URL.createObjectURL(f); e.target.value='';
+};
+
+/* ---- OCR ---- */
+let worker = null;
+async function ocr(canvas){
+  try{
+    if(!worker){
+      $('readMsg').textContent = 'Loading the text engine (first run only)…';
+      worker = await Tesseract.createWorker('eng', 1, { logger: m => {
+        if(m.status==='recognizing text') $('bar').style.width = (20 + m.progress*78) + '%'; } });
+    }
+    $('readMsg').textContent = 'Reading the invoice…'; $('bar').style.width='15%';
+    const { data } = await worker.recognize(canvas);
+    $('bar').style.width='100%'; fill(parse(data.text));
+  }catch(e){ toast('Could not read it — type the fields in','bad');
+    fill({inv:'',party:'',date:'',cI:0,cP:0,cD:0}); }
+}
+
+/* ---- field extraction ---- */
+const tidy = s => String(s||'').replace(/\s+/g,' ').trim();
+function parse(text){
+  const lines = text.split('\n').map(tidy).filter(Boolean), flat = lines.join(' | ');
+  const o = { inv:'', party:'', date:'', cI:0, cP:0, cD:0 };
+  let m = text.match(/Invoice\s*No[^A-Za-z0-9]{0,12}([A-Z0-9][A-Z0-9\/\-]{3,24})/i);
+  if(m){ o.inv = m[1].toUpperCase().replace(/[^A-Z0-9\/\-]/g,''); o.cI = .9; }
+  if(!o.inv){ m = flat.match(/\b([A-Z]{1,4}\d?[A-Z]{0,4}\d{2}\/\d{3,6})\b/);
+    if(m){ o.inv = m[1].toUpperCase(); o.cI = .6; } }
+  m = text.match(/Invoice\s*Date[^0-9]{0,12}(\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4})/i);
+  if(m){ o.date = norm(m[1]); o.cD = .9; }
+  if(!o.date){ m = flat.match(/\b(\d{2}[-\/.]\d{2}[-\/.]\d{4})\b/); if(m){ o.date = norm(m[1]); o.cD = .5; } }
+  [[/billing\s*address/i,.85],[/shipping\s*address/i,.65]].forEach(([re,cf])=>{
+    if(o.party) return;
+    const i = lines.findIndex(l => re.test(l)); if(i < 0) return;
+    for(let j=i+1;j<Math.min(i+6,lines.length);j++){ const n = name(lines[j]); if(n){ o.party=n; o.cP=cf; break; } }
+  });
+  if(!o.party){ const i = lines.findIndex(l=>/shop\s*no|chawl|marg|plot\s*no|road/i.test(l));
+    if(i>0){ const n = name(lines[i-1]); if(n){ o.party=n; o.cP=.4; } } }
+  return o;
+}
+function name(line){
+  let s = tidy(line).replace(/^[^A-Za-z]+/,'').replace(/[|:]+$/,'');
+  if(s.length<5||s.length>60) return '';
+  if(/address|locality|pin\s*code|state\s*code|phone|gstn|city|invoice|original|buyer|copy/i.test(s)) return '';
+  if((s.match(/[A-Za-z]/g)||[]).length < s.length*.65) return '';
+  if(s.split(' ').filter(Boolean).length < 2) return '';
+  return s.replace(/\b\w/g,c=>c.toUpperCase());
+}
+function norm(d){ const p=d.replace(/[.\/]/g,'-').split('-'); if(p.length!==3) return d;
+  let y=p[2]; if(y.length===2) y=(+y>70?'19':'20')+y;
+  return p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0')+'-'+y; }
+
+function tag(el, c, got){
+  el.textContent = !got ? 'not found' : c>=.8 ? 'read clearly' : 'check this';
+  el.style.color = !got ? 'var(--warn)' : c>=.8 ? 'var(--ok)' : 'var(--wait)';
+}
+function fill(r){
+  $('fInv').value=r.inv; $('fParty').value=r.party; $('fDate').value=r.date;
+  tag($('tInv'),r.cI,r.inv); tag($('tParty'),r.cP,r.party); tag($('tDate'),r.cD,r.date);
+  rename(); show('scConfirm');
+  if(!r.inv || !r.party) toast('Some fields need typing in','bad');
+}
+const safe = s => tidy(s).replace(/[\/\\:*?"<>|]+/g,'-').replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+const filename = () => (safe($('fInv').value)||'NO-INV')+'_'+(safe($('fParty').value)||'NO-PARTY')+'_'+(safe($('fDate').value)||'NO-DATE')+'.pdf';
+function rename(){ $('fname').textContent = filename(); }
+['fInv','fParty','fDate'].forEach(i=>$(i).addEventListener('input', rename));
+$('bRetake').onclick = ()=>{ current=null; show('scHome'); };
+
+function toPDF(jpeg,w,h){
+  const { jsPDF } = window.jspdf;
+  const land = w>h, doc = new jsPDF({orientation: land?'l':'p', unit:'pt', format:'a4'});
+  const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+  const s=Math.min(pw/w, ph/h);
+  doc.addImage(jpeg,'JPEG',(pw-w*s)/2,(ph-h*s)/2,w*s,h*s);
+  return doc.output('datauristring').split(',')[1];
+}
+const today = () => { const d=new Date(Date.now()+ (new Date().getTimezoneOffset()+330)*60000);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+
+/* ---- queue ---- */
+let db;
+const openDB = () => new Promise(res=>{ const r=indexedDB.open('signq',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('jobs',{keyPath:'id',autoIncrement:true});
+  r.onsuccess=()=>{ db=r.result; res(); }; });
+const store = m => db.transaction('jobs',m).objectStore('jobs');
+const qAdd = j => new Promise(r=>{ const q=store('readwrite').add(j); q.onsuccess=()=>r(); });
+const qAll = () => new Promise(r=>{ const q=store('readonly').getAll(); q.onsuccess=()=>r(q.result); });
+const qDel = id => new Promise(r=>{ const q=store('readwrite').delete(id); q.onsuccess=()=>r(); });
+
+async function paint(){
+  const j = await qAll();
+  $('qbadge').style.display = j.length ? '' : 'none'; $('qbadge').textContent = j.length;
+  $('qlist').innerHTML = j.length ? j.map(x=>
+    '<div class="q"><div><b>'+(x.invoice||'—')+'</b><small>'+(x.party||'—')+'</small></div><span>waiting</span></div>').join('')
+    : '<div class="empty">Nothing waiting. Every scan is on the board.</div>';
+}
+async function flush(){
+  if(!navigator.onLine || !P.gd) return;
+  for(const j of await qAll()){
+    try { await send(j); await qDel(j.id); }
+    catch(e){ if(e.rejected){ await qDel(j.id); } else break; }
+  }
+  paint();
+}
+addEventListener('online', flush);
+
+$('bUp').onclick = async () => {
+  if(!P.gd || !P.id){ toast('Sign in first','bad'); show('scSet'); return; }
+  const b=$('bUp'); b.disabled=true; b.textContent='Uploading…';
+  const job = { filename:filename(), invoice:tidy($('fInv').value), party:tidy($('fParty').value),
+                date:tidy($('fDate').value), day:today(), pdf:toPDF(current.jpeg,current.w,current.h) };
+  try{
+    if(!navigator.onLine) throw new Error('offline');
+    await send(job);
+    toast('On the board — '+job.invoice,'good');
+  }catch(e){
+    if(e.rejected){ toast('Rejected: '+e.message,'bad'); }
+    else { await qAdd(job); await paint(); toast('No signal — saved, will upload itself','bad'); }
+  }
+  current=null; b.disabled=false; b.textContent='Upload to board'; show('scHome');
+};
+
+/* ---- settings ---- */
+function drawGodowns(){
+  const l = P.list;
+  $('gdCard').style.display = l.length ? '' : 'none';
+  $('gdList').innerHTML = l.map(g =>
+    '<label class="gd"><input type="radio" name="gd" value="'+g.key+'"'+(g.key===P.gd?' checked':'')+'> '+g.label+'</label>').join('');
+  $('gdList').querySelectorAll('input').forEach(r => r.onchange = () => {
+    P.gd = r.value; P.gdName = (l.filter(x=>x.key===r.value)[0]||{}).label || r.value; subtitle();
+  });
+}
+$('navS').onclick = ()=>{ $('sUrl').value=P.url; $('sId').value=P.id; $('sPw').value=P.pw; drawGodowns(); show('scSet'); };
+$('navQ').onclick = async ()=>{ await paint(); show('scQueue'); };
+$('bBack1').onclick = $('bBack2').onclick = ()=>show('scHome');
+$('bFlush').onclick = ()=>{ toast('Trying…'); flush(); };
+$('bSave').onclick = async ()=>{
+  P.url = $('sUrl').value || DEFAULT_URL; P.id = $('sId').value; P.pw = $('sPw').value; P.tok='';
+  const b=$('bSave'); b.disabled=true; b.textContent='Signing in…';
+  try{ await signIn(); drawGodowns();
+       toast(P.gd ? 'Signed in — '+(P.gdName||P.gd) : 'Signed in — now pick the godown','good'); }
+  catch(e){ toast(e.message,'bad'); }
+  b.disabled=false; b.textContent='Save & sign in';
+};
+
+/* ---- boot ---- */
+subtitle();
+openDB().then(paint).then(flush);
+if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
