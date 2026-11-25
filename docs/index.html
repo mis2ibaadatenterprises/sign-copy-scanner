@@ -267,22 +267,62 @@ $('file').onchange = e => {
 
 /* ---- OCR ---- */
 let worker = null, lastRaw = '';
+
+/* A zoomed crop of the page. Tesseract needs roughly 300 DPI on the text;
+   a whole invoice shot from half a metre gives it far less, so each field
+   is read from its own region, upscaled. This is what turns
+   "voice Nat pacRazenairy" into "P2CRS26/3171". */
+function crop(src, fx, fy, fw, fh, zoom){
+  const sx = Math.round(src.width*fx),  sy = Math.round(src.height*fy);
+  const sw = Math.round(src.width*fw),  sh = Math.round(src.height*fh);
+  const c = document.createElement('canvas');
+  c.width = sw*zoom; c.height = sh*zoom;
+  const x = c.getContext('2d');
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+
+/* Takes whichever pass read each field with most confidence. */
+function merge(a, b){
+  const pick = (f, c) => (b[c] > a[c]) ? [b[f], b[c]] : [a[f], a[c]];
+  const [inv, cI]   = pick('inv','cI');
+  const [party, cP] = pick('party','cP');
+  const [date, cD]  = pick('date','cD');
+  return { inv, cI, party, cP, date, cD };
+}
+
 async function ocr(canvas){
   try{
     if(!worker){
       $('readMsg').textContent = 'Loading the text engine (first run only)…';
       worker = await Tesseract.createWorker('eng', 1, { logger: m => {
-        if(m.status==='recognizing text') $('bar').style.width = (20 + m.progress*78) + '%'; } });
+        if(m.status === 'recognizing text') $('bar').style.width = Math.min(95, 20 + m.progress*25) + '%'; } });
     }
-    $('readMsg').textContent = 'Reading the invoice…'; $('bar').style.width='15%';
-    const { data } = await worker.recognize(canvas);
-    lastRaw = data.text || '';
-    $('bar').style.width='100%';
-    if(!lastRaw.trim()){
-      lastRaw = '[the engine ran but found no text at all — most likely the photo is '
-              + 'too blurred, too dark, or framed too far away]';
+    const passes = [];
+    async function run(label, c, pct, msg){
+      $('readMsg').textContent = msg; $('bar').style.width = pct + '%';
+      const { data } = await worker.recognize(c);
+      passes.push({ label, text: data.text || '' });
+      return parse(data.text || '');
     }
-    fill(parse(data.text || ''));
+
+    const top  = await run('invoice number', crop(canvas, .45, 0,   .55, .28, 3), 35, 'Reading the invoice number…');
+    const bill = await run('party name',     crop(canvas, .05, .10, .65, .32, 3), 65, 'Reading the party name…');
+    let out = merge(top, bill);
+
+    if(!out.inv || !out.party){
+      const all = await run('whole page', canvas, 88, 'Checking the whole page…');
+      out = merge(out, all);
+    }
+
+    $('bar').style.width = '100%';
+    lastRaw = passes.map(p => '--- ' + p.label + ' ---\n' + p.text.trim()).join('\n\n');
+    if(!lastRaw.replace(/-|\s|whole page|invoice number|party name/g,'')){
+      lastRaw = '[the engine ran but found no text — the photo is probably too '
+              + 'blurred, too dark, or taken too far away]';
+    }
+    fill(out);
   }catch(e){
     lastRaw = '[TEXT ENGINE FAILED]\n' + (e && (e.message || e)) + '\n\n'
             + 'The OCR engine itself did not run, so no reading was attempted.';
@@ -318,7 +358,10 @@ function name(line){
   if(/address|locality|pin\s*code|state\s*code|phone|gstn|city|invoice|original|buyer|copy/i.test(s)) return '';
   if((s.match(/[A-Za-z]/g)||[]).length < s.length*.65) return '';
   if(s.split(' ').filter(Boolean).length < 2) return '';
-  return s.replace(/\b\w/g,c=>c.toUpperCase());
+  s = s.replace(/\b\w/g,c=>c.toUpperCase());
+  const half = s.length >> 1;                       // "Shree Ambika Stores Shree Ambika Stores"
+  if(s.length % 2 === 1 && s.slice(0, half) === s.slice(half + 1)) s = s.slice(0, half);
+  return s;
 }
 function norm(d){ const p=d.replace(/[.\/]/g,'-').split('-'); if(p.length!==3) return d;
   let y=p[2]; if(y.length===2) y=(+y>70?'19':'20')+y;
