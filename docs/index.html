@@ -101,6 +101,11 @@
       <div class="field"><label>Invoice date <span class="tag" id="tDate"></span></label>
         <input id="fDate" autocomplete="off" placeholder="DD-MM-YYYY"></div>
       <div class="fname" id="fname">—</div>
+      <details id="rawBox" style="margin-top:12px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer">What the scanner read</summary>
+        <pre id="rawText" style="font-size:11px;line-height:1.35;white-space:pre-wrap;word-break:break-word;
+          max-height:240px;overflow:auto;margin-top:8px;color:var(--ink)"></pre>
+      </details>
     </div>
     <button class="big" id="bUp">Upload to board</button>
     <div style="height:10px"></div>
@@ -261,7 +266,7 @@ $('file').onchange = e => {
 };
 
 /* ---- OCR ---- */
-let worker = null;
+let worker = null, lastRaw = '';
 async function ocr(canvas){
   try{
     if(!worker){
@@ -271,9 +276,19 @@ async function ocr(canvas){
     }
     $('readMsg').textContent = 'Reading the invoice…'; $('bar').style.width='15%';
     const { data } = await worker.recognize(canvas);
-    $('bar').style.width='100%'; fill(parse(data.text));
-  }catch(e){ toast('Could not read it — type the fields in','bad');
-    fill({inv:'',party:'',date:'',cI:0,cP:0,cD:0}); }
+    lastRaw = data.text || '';
+    $('bar').style.width='100%';
+    if(!lastRaw.trim()){
+      lastRaw = '[the engine ran but found no text at all — most likely the photo is '
+              + 'too blurred, too dark, or framed too far away]';
+    }
+    fill(parse(data.text || ''));
+  }catch(e){
+    lastRaw = '[TEXT ENGINE FAILED]\n' + (e && (e.message || e)) + '\n\n'
+            + 'The OCR engine itself did not run, so no reading was attempted.';
+    toast('Text engine failed — see "What the scanner read"','bad');
+    fill({inv:'',party:'',date:'',cI:0,cP:0,cD:0});
+  }
 }
 
 /* ---- field extraction ---- */
@@ -316,6 +331,7 @@ function tag(el, c, got){
 function fill(r){
   $('fInv').value=r.inv; $('fParty').value=r.party; $('fDate').value=r.date;
   tag($('tInv'),r.cI,r.inv); tag($('tParty'),r.cP,r.party); tag($('tDate'),r.cD,r.date);
+  $('rawText').textContent = lastRaw || '(nothing captured)';
   rename(); show('scConfirm');
   if(!r.inv || !r.party) toast('Some fields need typing in','bad');
 }
