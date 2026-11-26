@@ -18,7 +18,9 @@ const ST = {
   get beep(){ return localStorage.getItem('st_beep') !== '0' },
   set beep(v){ localStorage.setItem('st_beep', v ? '1' : '0') },
   /* skip the confirm screen: capture goes straight to the board */
-  get auto(){ return localStorage.getItem('st_auto') === '1' || localStorage.getItem('st_on') === '1' },
+  /* Default ON. Confirming every bill was never the point; the operator
+     wants click, beep, next. Switch it off to get the check screen back. */
+  get auto(){ return localStorage.getItem('st_auto') !== '0' },
   set auto(v){ localStorage.setItem('st_auto', v ? '1' : '0') }
 };
 
@@ -384,7 +386,7 @@ addEventListener('DOMContentLoaded', () => {
   stationPaint();
 
   const au = document.getElementById('stAuto');
-  if(au){ au.checked = localStorage.getItem('st_auto') === '1'; au.onchange = () => { ST.auto = au.checked; }; }
+  if(au){ au.checked = ST.auto; au.onchange = () => { ST.auto = au.checked; }; }
   const on = document.getElementById('stOn'), bp = document.getElementById('stBeep');
   if(on){ on.checked = ST.on; on.onchange = () => { ST.on = on.checked; stationPaint(); }; }
   if(bp){ bp.checked = ST.beep; bp.onchange = () => { ST.beep = bp.checked; }; }

@@ -160,6 +160,7 @@
     <div class="card">
       <h2>Tripod station</h2>
       <label class="gd"><input type="checkbox" id="stAuto"> Upload straight away (skip the check screen)</label>
+      <div class="hint">On by default. Turn it off only if you want to read each bill before it goes.</div>
       <label class="gd"><input type="checkbox" id="stOn"> Station mode (remote shutter, fixed tripod)</label>
       <label class="gd"><input type="checkbox" id="stBeep"> Beep after each bill</label>
       <div class="hint" id="stStatus">Off. The phone is used by hand.</div>
@@ -170,6 +171,7 @@
       <h2>Board address</h2>
       <div class="field"><label>Web app URL</label><input id="sUrl" autocomplete="off"></div>
       <div class="hint">Already set for Ibaadat. Change it only if the board moves.</div>
+      <div class="hint" id="verLine" style="margin-top:10px">version —</div>
     </div>
     <button class="big" id="bSave">Save &amp; sign in</button>
     <div style="height:10px"></div>
@@ -523,12 +525,37 @@ $('bSave').onclick = async ()=>{
   b.disabled=false; b.textContent='Save & sign in';
 };
 
+/* ---- keeping phones current ----
+   A stale copy on a phone is indistinguishable from a bug, so the app checks
+   its own version on every open and clears itself out if it is behind. */
+const APP_VERSION = '8';
+async function checkVersion(){
+  try{
+    const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
+    const el = document.getElementById('verLine');
+    if(el) el.textContent = 'version ' + APP_VERSION + (v && v !== APP_VERSION ? ' (update ' + v + ' available)' : '');
+    if(v && v !== APP_VERSION && sessionStorage.getItem('reloaded') !== v){
+      sessionStorage.setItem('reloaded', v);
+      if('caches' in window) for(const k of await caches.keys()) await caches.delete(k);
+      if(navigator.serviceWorker){
+        const rs = await navigator.serviceWorker.getRegistrations();
+        for(const r of rs) await r.unregister();
+      }
+      location.replace(location.pathname + location.search.replace(/([?&])v=\d+/, '$1') +
+        (location.search ? '&' : '?') + 'v=' + v);
+    }
+  }catch(e){}
+}
+
 /* ---- boot ---- */
 subtitle();
+checkVersion();
+if(!P.id) setTimeout(()=>{ if(!P.id) show('scSet'); }, 400);
 openDB().then(paint).then(flush);
 if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
-if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator)
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=7"></script>
+<script src="station.js?v=8"></script>
 </body>
 </html>
