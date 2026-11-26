@@ -562,7 +562,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '12';
+const APP_VERSION = '13';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -590,6 +590,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=12"></script>
+<script src="station.js?v=13"></script>
 </body>
 </html>

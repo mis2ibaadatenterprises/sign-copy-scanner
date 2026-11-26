@@ -558,6 +558,7 @@ function loadImage(file){
 
 async function bulkRun(files){
   bulkStop = false;
+  if(typeof db === 'undefined' || !db){ try{ await openDB(); }catch(e){} }
   const rows = [];
   show('scBulk');
   bulkPaint(0, files.length, rows);
@@ -580,12 +581,16 @@ async function bulkRun(files){
       current = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
 
       const r = await stationRead(use);
-      const before = await qAll();
+      let before = [], after = [];
+      try{ before = await qAll(); }catch(e){}
       await autoSend(r);                       // uploads, or queues when offline
-      const after = await qAll();
-      rows.unshift({ inv: r.inv, party: r.party, state: after.length > before.length ? 'queued' : 'sent' });
+      try{ after = await qAll(); }catch(e){}
+      rows.unshift({ inv: r.inv, party: r.party,
+                     state: after.length > before.length ? 'queued' : 'sent' });
     }catch(e){
-      rows.unshift({ inv: '', party: '', state: 'failed' });
+      const why = (e && (e.message || e.name)) ? String(e.message || e.name) : String(e);
+      console.error('bulk item ' + (i+1), e);
+      rows.unshift({ inv: '', party: '', state: why.slice(0, 60) });
     }
     bulkPaint(i + 1, files.length, rows);
   }
