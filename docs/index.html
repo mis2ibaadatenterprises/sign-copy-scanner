@@ -94,7 +94,7 @@
       <div style="height:10px"></div>
       <button class="big ghost" id="bPick">Use photo / camera roll</button>
       <div style="height:10px"></div>
-      <button class="big ghost" id="bkPick">Bulk upload — pick many photos</button>
+      <button class="big ghost" id="bkPick">Upload</button>
     </div>
     <input type="file" id="file" accept="image/*" capture="environment" hidden>
     <input type="file" id="bulkFile" accept="image/*" multiple hidden>
@@ -562,7 +562,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '11';
+const APP_VERSION = '12';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -590,6 +590,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=11"></script>
+<script src="station.js?v=12"></script>
 </body>
 </html>
