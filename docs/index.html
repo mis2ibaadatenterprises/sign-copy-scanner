@@ -93,8 +93,11 @@
       <button class="big" id="bShoot">Capture invoice</button>
       <div style="height:10px"></div>
       <button class="big ghost" id="bPick">Use photo / camera roll</button>
+      <div style="height:10px"></div>
+      <button class="big ghost" id="bkPick">Bulk upload — pick many photos</button>
     </div>
     <input type="file" id="file" accept="image/*" capture="environment" hidden>
+    <input type="file" id="bulkFile" accept="image/*" multiple hidden>
   </section>
 
   <section class="screen" id="scRead">
@@ -124,6 +127,20 @@
     <button class="big" id="bUp">Upload to board</button>
     <div style="height:10px"></div>
     <button class="big ghost" id="bRetake">Retake</button>
+  </section>
+
+  <section class="screen" id="scBulk">
+    <div class="card">
+      <h2>Bulk upload</h2>
+      <div id="bkNow" style="font-size:15px;font-weight:600">Starting…</div>
+      <div class="hint" id="bkProg">0 of 0 done</div>
+      <div class="hint">Each bill is read and sent on its own. Anything that cannot go
+        now stays in the queue and uploads itself later. You can leave this open.</div>
+    </div>
+    <div class="card"><h2>Bills</h2><div id="bkList"><div class="empty">Nothing yet.</div></div></div>
+    <button class="big ghost" id="bkStop">Stop after this one</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="bkDone">Back to camera</button>
   </section>
 
   <section class="screen" id="scQueue">
@@ -214,9 +231,10 @@ if (qs.get('g')) P.gd = qs.get('g');
 if (qs.get('id') && !P.id) P.id = qs.get('id');
 
 function subtitle(){
-  $('sub').textContent = P.gd
+  const v = (typeof APP_VERSION !== 'undefined') ? ' · v' + APP_VERSION : '';
+  $('sub').textContent = (P.gd
     ? (P.gdName || P.gd) + (P.who ? ' · ' + P.who : '')
-    : 'Tap the gear to sign in';
+    : 'Tap the gear to sign in') + v;
 }
 
 /* ---- the board API: simple POST, no preflight ---- */
@@ -544,7 +562,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '10';
+const APP_VERSION = '11';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -572,6 +590,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=10"></script>
+<script src="station.js?v=11"></script>
 </body>
 </html>

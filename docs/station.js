@@ -418,6 +418,21 @@ addEventListener('DOMContentLoaded', () => {
   const reset = document.getElementById('calReset');
   if(reset) reset.onclick = () => { calPts = calDefault(); drawCal(); };
 
+  const bk = document.getElementById('bkPick');
+  const bki = document.getElementById('bulkFile');
+  if(bk && bki){
+    bk.onclick = () => bki.click();
+    bki.onchange = e => {
+      const fs = [...e.target.files];
+      e.target.value = '';
+      if(fs.length) bulkRun(fs);
+    };
+  }
+  const bs = document.getElementById('bkStop');
+  if(bs) bs.onclick = () => { bulkStop = true; };
+  const bd = document.getElementById('bkDone');
+  if(bd) bd.onclick = () => show('scHome');
+
   const shoot = document.getElementById('stShoot');
   if(shoot) shoot.onclick = stationShot;
 });
@@ -511,4 +526,71 @@ function pageFrom(canvas, quad){
   const outW = 1700, outH = Math.max(500, Math.round(outW * ph / pw));
   const flat = rectify(canvas, q, outW, outH);
   return ST.bw ? scanLook(flat) : flat;
+}
+
+/* ---------- bulk upload ----------
+ *
+ * A stack of signed copies already sitting in the camera roll. Pick them all;
+ * each one is read and sent in turn, and anything that cannot go now is left
+ * in the queue to upload itself later. No confirm step, by definition.
+ */
+let bulkStop = false;
+
+function bulkPaint(done, total, rows){
+  const p = document.getElementById('bkProg');
+  if(p) p.textContent = done + ' of ' + total + ' done';
+  const l = document.getElementById('bkList');
+  if(l) l.innerHTML = rows.map(r =>
+    '<div class="q"><div><b>' + (r.inv || '— no number —') + '</b><small>' +
+      (r.party || '—') + '</small></div><span style="color:' +
+      (r.state === 'sent' ? 'var(--ok)' : r.state === 'queued' ? 'var(--wait)' : 'var(--warn)') +
+      '">' + r.state + '</span></div>').join('');
+}
+
+function loadImage(file){
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function bulkRun(files){
+  bulkStop = false;
+  const rows = [];
+  show('scBulk');
+  bulkPaint(0, files.length, rows);
+
+  if(!worker){
+    const p = document.getElementById('bkProg');
+    if(p) p.textContent = 'Loading the text engine (first run only)…';
+    worker = await Tesseract.createWorker('eng', 1);
+  }
+
+  for(let i = 0; i < files.length; i++){
+    if(bulkStop) break;
+    const st = document.getElementById('bkNow');
+    if(st) st.textContent = 'Reading ' + (i+1) + ' of ' + files.length + '…';
+    try{
+      const img = await loadImage(files[i]);
+      const c = prep(img, img.naturalWidth, img.naturalHeight);
+      const page = ST.trim ? pageFrom(c, (ST.on && ST.quad) ? ST.quad : null) : null;
+      const use = page || c;
+      current = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
+
+      const r = await stationRead(use);
+      const before = await qAll();
+      await autoSend(r);                       // uploads, or queues when offline
+      const after = await qAll();
+      rows.unshift({ inv: r.inv, party: r.party, state: after.length > before.length ? 'queued' : 'sent' });
+    }catch(e){
+      rows.unshift({ inv: '', party: '', state: 'failed' });
+    }
+    bulkPaint(i + 1, files.length, rows);
+  }
+
+  const st = document.getElementById('bkNow');
+  if(st) st.textContent = bulkStop ? 'Stopped.' : 'All done.';
+  beep(true);
 }
