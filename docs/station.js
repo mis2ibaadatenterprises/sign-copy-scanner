@@ -20,6 +20,9 @@ const ST = {
   /* skip the confirm screen: capture goes straight to the board */
   /* Default ON. Confirming every bill was never the point; the operator
      wants click, beep, next. Switch it off to get the check screen back. */
+  /* trim the desk away and straighten the page, handheld */
+  get trim(){ return localStorage.getItem('st_trim') !== '0' },
+  set trim(v){ localStorage.setItem('st_trim', v ? '1' : '0') },
   get auto(){ return localStorage.getItem('st_auto') !== '0' },
   set auto(v){ localStorage.setItem('st_auto', v ? '1' : '0') }
 };
@@ -385,6 +388,8 @@ addEventListener('DOMContentLoaded', () => {
   calInit();
   stationPaint();
 
+  const tr = document.getElementById('stTrim');
+  if(tr){ tr.checked = ST.trim; tr.onchange = () => { ST.trim = tr.checked; }; }
   const au = document.getElementById('stAuto');
   if(au){ au.checked = ST.auto; au.onchange = () => { ST.auto = au.checked; }; }
   const on = document.getElementById('stOn'), bp = document.getElementById('stBeep');
@@ -408,3 +413,93 @@ addEventListener('DOMContentLoaded', () => {
   const shoot = document.getElementById('stShoot');
   if(shoot) shoot.onclick = stationShot;
 });
+
+/* ---------- finding the page in a photo ----------
+ *
+ * Everything outside the paper is noise: desk, hands, shadow. With a tripod
+ * the corners are calibrated once; handheld they have to be found per shot.
+ *
+ * The bill is a bright blob on a darker background, so: shrink, split light
+ * from dark at the Otsu point, flood the bright region outward from the
+ * middle of the frame, then take its four extreme corners. Those are the
+ * corners of a sheet of paper even when it sits at an angle.
+ */
+function detectPage(src){
+  const W = 400, sc = W / src.width, H = Math.max(1, Math.round(src.height * sc));
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.getContext('2d').drawImage(src, 0, 0, W, H);
+  const d = c.getContext('2d').getImageData(0,0,W,H).data;
+
+  const g = new Uint8Array(W*H), hist = new Uint32Array(256);
+  for(let i=0,j=0; j<W*H; i+=4, j++){
+    g[j] = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
+    hist[g[j]]++;
+  }
+
+  // Otsu: the split that best separates paper from background
+  const total = W*H;
+  let sum = 0; for(let i=0;i<256;i++) sum += i*hist[i];
+  let sumB = 0, wB = 0, best = 0, thr = 128;
+  for(let t=0;t<256;t++){
+    wB += hist[t]; if(!wB) continue;
+    const wF = total - wB; if(!wF) break;
+    sumB += t*hist[t];
+    const mB = sumB/wB, mF = (sum-sumB)/wF, v = wB*wF*(mB-mF)*(mB-mF);
+    if(v > best){ best = v; thr = t; }
+  }
+
+  // flood the bright region from the middle of the frame
+  const seen = new Uint8Array(W*H);
+  const stack = [];
+  for(let y = (H*0.35)|0; y < (H*0.65|0); y++)
+    for(let x = (W*0.35)|0; x < (W*0.65|0); x++)
+      if(g[y*W+x] > thr){ stack.push(y*W+x); seen[y*W+x] = 1; break; }
+  if(!stack.length) return null;
+
+  let n = 0;
+  let tl=[1e9,0], br=[-1e9,0], tr=[-1e9,0], bl=[1e9,0];
+  const push = (i) => { if(i>=0 && i<W*H && !seen[i] && g[i] > thr){ seen[i]=1; stack.push(i); } };
+  while(stack.length){
+    const i = stack.pop(), x = i % W, y = (i / W) | 0;
+    n++;
+    if(x+y < tl[0]) tl = [x+y, x, y];
+    if(x+y > br[0]) br = [x+y, x, y];
+    if(x-y > tr[0]) tr = [x-y, x, y];
+    if(x-y < bl[0]) bl = [x-y, x, y];
+    if(x > 0)   push(i-1);
+    if(x < W-1) push(i+1);
+    if(y > 0)   push(i-W);
+    if(y < H-1) push(i+W);
+  }
+
+  if(n < total * 0.25) return null;                 // too small to be the page
+  const quad = [tl, tr, br, bl].map(p => [p[1]/W, p[2]/H]);
+
+  // a page is convex and roughly rectangular; reject anything odd
+  const side = (a,b) => Math.hypot((quad[a][0]-quad[b][0]), (quad[a][1]-quad[b][1]));
+  const top = side(0,1), bot = side(3,2), left = side(0,3), right = side(1,2);
+  if(Math.min(top,bot) < 0.35 || Math.min(left,right) < 0.20) return null;
+  if(Math.max(top,bot) / Math.min(top,bot) > 1.6) return null;
+  if(Math.max(left,right) / Math.min(left,right) > 1.6) return null;
+
+  // breathe a little so no ink sits on the cut line
+  const cx = (quad[0][0]+quad[1][0]+quad[2][0]+quad[3][0])/4;
+  const cy = (quad[0][1]+quad[1][1]+quad[2][1]+quad[3][1])/4;
+  return quad.map(([x,y]) => [
+    Math.min(1, Math.max(0, cx + (x-cx)*1.012)),
+    Math.min(1, Math.max(0, cy + (y-cy)*1.012))
+  ]);
+}
+
+/* Returns a flat, trimmed, scanned-looking page — or null to keep the photo
+ * as it is, when no page could be found with confidence. */
+function pageFrom(canvas, quad){
+  const q = quad || (ST.trim ? detectPage(canvas) : null);
+  if(!q) return null;
+  const w = canvas.width, h = canvas.height;
+  const d = (a,b) => Math.hypot((q[a][0]-q[b][0])*w, (q[a][1]-q[b][1])*h);
+  const pw = (d(0,1) + d(3,2)) / 2, ph = (d(0,3) + d(1,2)) / 2;
+  const outW = 1700, outH = Math.max(500, Math.round(outW * ph / pw));
+  return scanLook(rectify(canvas, q, outW, outH));
+}

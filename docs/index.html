@@ -159,6 +159,7 @@
     </div>
     <div class="card">
       <h2>Tripod station</h2>
+      <label class="gd"><input type="checkbox" id="stTrim"> Trim to the edges of the bill and flatten it</label>
       <label class="gd"><input type="checkbox" id="stAuto"> Upload straight away (skip the check screen)</label>
       <div class="hint">On by default. Turn it off only if you want to read each bill before it goes.</div>
       <label class="gd"><input type="checkbox" id="stOn"> Station mode (remote shutter, fixed tripod)</label>
@@ -288,9 +289,22 @@ let current = null;
 async function handle(src, w, h){
   show('scRead'); $('bar').style.width='8%'; $('readMsg').textContent='Cleaning up the image…';
   const c = prep(src, w, h);
-  const jpeg = c.toDataURL('image/jpeg', 0.82);
-  $('shot').src = jpeg; current = { jpeg, w:c.width, h:c.height };
-  await ocr(c);
+
+  /* Trim the desk away: calibrated corners if the tripod is set up,
+     otherwise find the sheet in the photo. Falls back to the whole
+     frame when no page can be found with confidence. */
+  let page = null;
+  try{
+    if(typeof pageFrom === 'function'){
+      $('readMsg').textContent = 'Finding the edges of the bill…';
+      page = pageFrom(c, (typeof ST !== 'undefined' && ST.on && ST.quad) ? ST.quad : null);
+    }
+  }catch(e){ page = null; }
+
+  const use = page || c;
+  const jpeg = use.toDataURL('image/jpeg', page ? 0.72 : 0.82);
+  $('shot').src = jpeg; current = { jpeg, w:use.width, h:use.height, trimmed: !!page };
+  await ocr(use);
 }
 $('bShoot').onclick = () => {
   const v = $('cam'); if(!v.videoWidth){ toast('Camera not ready', 'bad'); return; }
@@ -528,7 +542,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '8';
+const APP_VERSION = '9';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -556,6 +570,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=8"></script>
+<script src="station.js?v=9"></script>
 </body>
 </html>
