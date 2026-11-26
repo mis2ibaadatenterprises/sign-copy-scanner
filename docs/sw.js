@@ -1,4 +1,4 @@
-const CORE = 'sign-core-v6', RT = 'sign-rt-v1';
+const CORE = 'sign-core-v7', RT = 'sign-rt-v1';
 const SHELL = ['./', './index.html', './manifest.json', './station.js', './icon-180.png'];
 
 self.addEventListener('install', e => {
@@ -30,7 +30,7 @@ self.addEventListener('fetch', e => {
   // The app itself: network first, so a fix reaches the phone on the next
   // open. Cache is the fallback for a counter with no signal.
   e.respondWith(
-    fetch(r).then(res => {
+    fetch(new Request(r, { cache: 'reload' })).then(res => {
       const copy = res.clone();
       caches.open(CORE).then(c => c.put(r, copy));
       return res;
