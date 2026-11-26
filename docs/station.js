@@ -16,8 +16,39 @@ const ST = {
   get quad(){ try { return JSON.parse(localStorage.getItem('st_quad') || 'null') } catch(e){ return null } },
   set quad(v){ localStorage.setItem('st_quad', JSON.stringify(v)) },
   get beep(){ return localStorage.getItem('st_beep') !== '0' },
-  set beep(v){ localStorage.setItem('st_beep', v ? '1' : '0') }
+  set beep(v){ localStorage.setItem('st_beep', v ? '1' : '0') },
+  /* skip the confirm screen: capture goes straight to the board */
+  get auto(){ return localStorage.getItem('st_auto') === '1' || localStorage.getItem('st_on') === '1' },
+  set auto(v){ localStorage.setItem('st_auto', v ? '1' : '0') }
 };
+
+/* Straight-to-board upload, used whenever the confirm step is switched off.
+ * Nothing is thrown away on a bad read: the bill still reaches the board as
+ * NO-INV, where the bill number can be set by hand. */
+async function autoSend(r){
+  if(!current) return;
+  const nm = (x, fb) => { const c = String(x||'').trim().replace(/[\/\\:*?"<>|]+/g,'-')
+                            .replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+                          return c || fb; };
+  const job = {
+    filename: nm(r.inv,'NO-INV') + '_' + nm(r.party,'NO-PARTY') + '_' + nm(r.date,'NO-DATE') + '.pdf',
+    invoice: String(r.inv||'').trim(), party: String(r.party||'').trim(),
+    date: String(r.date||'').trim(), day: today(),
+    pdf: toPDF(current.jpeg, current.w, current.h)
+  };
+  toast('Uploading ' + (job.invoice || 'bill') + '…');
+  try{
+    if(!navigator.onLine) throw new Error('offline');
+    await send(job);
+    beep(true);
+    toast(job.invoice ? 'On the board — ' + job.invoice : 'On the board, but no bill number was read', 'good');
+  }catch(e){
+    if(e.rejected){ beep(false); toast('Rejected: ' + e.message, 'bad'); }
+    else { await qAdd(job); await paint(); beep(true); toast('No signal — saved, will upload itself','bad'); }
+  }
+  current = null;
+  show('scHome');
+}
 
 /* ---------- geometry ---------- */
 
@@ -352,6 +383,8 @@ addEventListener('DOMContentLoaded', () => {
   calInit();
   stationPaint();
 
+  const au = document.getElementById('stAuto');
+  if(au){ au.checked = localStorage.getItem('st_auto') === '1'; au.onchange = () => { ST.auto = au.checked; }; }
   const on = document.getElementById('stOn'), bp = document.getElementById('stBeep');
   if(on){ on.checked = ST.on; on.onchange = () => { ST.on = on.checked; stationPaint(); }; }
   if(bp){ bp.checked = ST.beep; bp.onchange = () => { ST.beep = bp.checked; }; }

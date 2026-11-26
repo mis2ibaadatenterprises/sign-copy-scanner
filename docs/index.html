@@ -159,7 +159,8 @@
     </div>
     <div class="card">
       <h2>Tripod station</h2>
-      <label class="gd"><input type="checkbox" id="stOn"> Station mode (remote shutter, no confirm)</label>
+      <label class="gd"><input type="checkbox" id="stAuto"> Upload straight away (skip the check screen)</label>
+      <label class="gd"><input type="checkbox" id="stOn"> Station mode (remote shutter, fixed tripod)</label>
       <label class="gd"><input type="checkbox" id="stBeep"> Beep after each bill</label>
       <div class="hint" id="stStatus">Off. The phone is used by hand.</div>
       <div style="height:10px"></div>
@@ -434,7 +435,9 @@ function fill(r){
   $('fInv').value=r.inv; $('fParty').value=r.party; $('fDate').value=r.date;
   tag($('tInv'),r.cI,r.inv); tag($('tParty'),r.cP,r.party); tag($('tDate'),r.cD,r.date);
   $('rawText').textContent = lastRaw || '(nothing captured)';
-  rename(); show('scConfirm');
+  rename();
+  if(typeof ST !== 'undefined' && ST.auto && current){ autoSend(r); return; }
+  show('scConfirm');
   if(!r.inv || !r.party) toast('Some fields need typing in','bad');
 }
 const safe = s => tidy(s).replace(/[\/\\:*?"<>|]+/g,'-').replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
