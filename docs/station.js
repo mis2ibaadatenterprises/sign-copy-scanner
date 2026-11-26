@@ -47,17 +47,27 @@ async function autoSend(r){
     pdf: toPDF(current.jpeg, current.w, current.h)
   };
   toast('Uploading ' + (job.invoice || 'bill') + '…');
+  let result = { state: 'sent', msg: '' };
   try{
     if(!navigator.onLine) throw new Error('offline');
     await send(job);
     beep(true);
     toast(job.invoice ? 'On the board — ' + job.invoice : 'On the board, but no bill number was read', 'good');
   }catch(e){
-    if(e.rejected){ beep(false); toast('Rejected: ' + e.message, 'bad'); }
-    else { await qAdd(job); await paint(); beep(true); toast('No signal — saved, will upload itself','bad'); }
+    if(e.rejected){
+      /* The board refused it. Queueing would just fail again, so say so. */
+      beep(false);
+      result = { state: 'refused', msg: String(e.message || e) };
+      toast('Rejected: ' + result.msg, 'bad');
+    } else {
+      await qAdd(job); await paint(); beep(true);
+      result = { state: 'queued', msg: '' };
+      toast('No signal — saved, will upload itself','bad');
+    }
   }
   current = null;
-  show('scHome');
+  if(!document.getElementById('scBulk').classList.contains('on')) show('scHome');
+  return result;
 }
 
 /* ---------- geometry ---------- */
@@ -581,12 +591,9 @@ async function bulkRun(files){
       current = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
 
       const r = await stationRead(use);
-      let before = [], after = [];
-      try{ before = await qAll(); }catch(e){}
-      await autoSend(r);                       // uploads, or queues when offline
-      try{ after = await qAll(); }catch(e){}
+      const res = (await autoSend(r)) || { state: 'sent', msg: '' };
       rows.unshift({ inv: r.inv, party: r.party,
-                     state: after.length > before.length ? 'queued' : 'sent' });
+                     state: res.state === 'refused' ? ('refused: ' + res.msg).slice(0, 60) : res.state });
     }catch(e){
       const why = (e && (e.message || e.name)) ? String(e.message || e.name) : String(e);
       console.error('bulk item ' + (i+1), e);
