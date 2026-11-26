@@ -1,5 +1,5 @@
-const CORE = 'sign-core-v4', RT = 'sign-rt-v1';
-const SHELL = ['./', './index.html', './manifest.json', './icon-180.png'];
+const CORE = 'sign-core-v5', RT = 'sign-rt-v1';
+const SHELL = ['./', './index.html', './manifest.json', './station.js', './icon-180.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CORE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

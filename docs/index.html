@@ -77,9 +77,23 @@
       <video id="cam" playsinline muted autoplay></video>
       <div class="hint">Lay the signed copy flat. Fill the frame. Keep the top edge straight.</div>
     </div>
-    <button class="big" id="bShoot">Capture invoice</button>
-    <div style="height:10px"></div>
-    <button class="big ghost" id="bPick">Use photo / camera roll</button>
+    <div id="stPanel" style="display:none">
+      <div class="card">
+        <h2>Tripod station</h2>
+        <div id="stState" style="font-size:15px;font-weight:600">Ready</div>
+        <div class="hint">Press the remote. Each bill is captured, straightened, read and
+          sent on its own — no confirm step.</div>
+        <div class="hint" id="stKey" style="color:var(--muted)">waiting for the first remote press…</div>
+      </div>
+      <button class="big" id="stShoot">Capture now</button>
+      <div style="height:14px"></div>
+      <div class="card"><h2>Last few</h2><div id="stList"><div class="empty">Nothing yet.</div></div></div>
+    </div>
+    <div id="stNormal">
+      <button class="big" id="bShoot">Capture invoice</button>
+      <div style="height:10px"></div>
+      <button class="big ghost" id="bPick">Use photo / camera roll</button>
+    </div>
     <input type="file" id="file" accept="image/*" capture="environment" hidden>
   </section>
 
@@ -119,6 +133,20 @@
     <button class="big ghost" id="bBack1">Back to camera</button>
   </section>
 
+  <section class="screen" id="scCal">
+    <div class="card">
+      <h2>Mark the four corners of the bill</h2>
+      <canvas id="calCv" style="width:100%;border-radius:10px;display:block"></canvas>
+      <div class="hint">Drag each dot onto a corner of the paper. Do this once, with the
+        tripod and the paper where they will stay. Every later shot uses these corners.</div>
+    </div>
+    <button class="big" id="calSave">Save corners</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="calReset">Reset dots</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="calCancel">Cancel</button>
+  </section>
+
   <section class="screen" id="scSet">
     <div class="card">
       <h2>Sign in</h2>
@@ -128,6 +156,14 @@
     </div>
     <div class="card" id="gdCard" style="display:none">
       <h2>Godown</h2><div id="gdList"></div>
+    </div>
+    <div class="card">
+      <h2>Tripod station</h2>
+      <label class="gd"><input type="checkbox" id="stOn"> Station mode (remote shutter, no confirm)</label>
+      <label class="gd"><input type="checkbox" id="stBeep"> Beep after each bill</label>
+      <div class="hint" id="stStatus">Off. The phone is used by hand.</div>
+      <div style="height:10px"></div>
+      <button class="big ghost" id="stCal">Set the page corners</button>
     </div>
     <div class="card">
       <h2>Board address</h2>
@@ -490,5 +526,6 @@ openDB().then(paint).then(flush);
 if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
+<script src="station.js"></script>
 </body>
 </html>
