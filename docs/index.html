@@ -321,7 +321,16 @@ async function handle(src, w, h){
     }
   }catch(e){ page = null; }
 
-  const use = page || c;
+  let use = page || c;
+
+  /* Put the bill the right way up before reading it. */
+  try{
+    if(typeof uprightPage === 'function'){
+      $('readMsg').textContent = 'Checking which way up the bill is…';
+      use = await uprightPage(use, m => { $('readMsg').textContent = m; });
+    }
+  }catch(e){}
+
   const jpeg = use.toDataURL('image/jpeg', page ? 0.72 : 0.82);
   $('shot').src = jpeg; current = { jpeg, w:use.width, h:use.height, trimmed: !!page };
   await ocr(use);
@@ -562,7 +571,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -590,6 +599,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=14"></script>
+<script src="station.js?v=15"></script>
 </body>
 </html>

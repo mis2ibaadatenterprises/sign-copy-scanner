@@ -199,6 +199,56 @@ function beep(ok){
   }catch(e){}
 }
 
+/* ---------- orientation ----------
+ *
+ * The bills are landscape; a phone held upright photographs them sideways.
+ * The reader looks for the number in the top-right corner, so a rotated page
+ * hides it completely. Try a quick read of that corner each way round and
+ * keep whichever orientation actually yields a bill number.
+ */
+function rotateCanvas(src, deg){
+  const c = document.createElement('canvas');
+  const swap = (deg === 90 || deg === 270);
+  c.width  = swap ? src.height : src.width;
+  c.height = swap ? src.width  : src.height;
+  const x = c.getContext('2d');
+  x.translate(c.width/2, c.height/2);
+  x.rotate(deg * Math.PI / 180);
+  x.drawImage(src, -src.width/2, -src.height/2);
+  return c;
+}
+
+async function quickNumber(canvas){
+  const { data } = await worker.recognize(crop(canvas, .55, 0, .45, .22, 3));
+  const t = data.text || '';
+  const m = t.match(/Invoice\s*No[^A-Za-z0-9]{0,12}([A-Z0-9][A-Z0-9\/\-]{3,24})/i)
+         || t.match(/\b([A-Z]{1,4}\d?[A-Z]{0,4}\d{2}\/\d{3,6})\b/);
+  return m ? m[1] : '';
+}
+
+/* Returns the canvas the right way up, trying rotations only when needed. */
+async function uprightPage(canvas, say){
+  if(!worker) worker = await Tesseract.createWorker('eng', 1);
+  await worker.setParameters({
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/-.: ',
+    tessedit_pageseg_mode: '6'
+  });
+  try{
+    if(await quickNumber(canvas)) return canvas;
+    // a page taller than it is wide is almost certainly a sideways bill
+    const order = canvas.height > canvas.width ? [90, 270, 180] : [180, 90, 270];
+    for(const deg of order){
+      if(say) say('Checking orientation…');
+      const r = rotateCanvas(canvas, deg);
+      if(await quickNumber(r)) return r;
+    }
+  }catch(e){}
+  finally{
+    try{ await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' }); }catch(e){}
+  }
+  return canvas;
+}
+
 /* ---------- reading a rectified page ---------- */
 
 /* The page is flat and always framed the same way, so the fields sit in
@@ -272,7 +322,8 @@ async function stationShot(){
       worker = await Tesseract.createWorker('eng', 1);
     }
     if(st) st.textContent = 'Reading…';
-    const r = await stationRead(page);
+    const upright = await uprightPage(page);
+    const r = await stationRead(upright);
 
     const job = {
       filename: (r.inv ? r.inv.replace(/[\/\\:*?"<>|]+/g,'-') : 'NO-INV') + '_' +
@@ -587,7 +638,8 @@ async function bulkRun(files){
       const img = await loadImage(files[i]);
       const c = prep(img, img.naturalWidth, img.naturalHeight);
       const page = ST.trim ? pageFrom(c, (ST.on && ST.quad) ? ST.quad : null) : null;
-      const use = page || c;
+      let use = page || c;
+      use = await uprightPage(use);
       current = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
 
       const r = await stationRead(use);
