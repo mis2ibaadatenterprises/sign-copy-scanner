@@ -20,9 +20,14 @@ const ST = {
   /* skip the confirm screen: capture goes straight to the board */
   /* Default ON. Confirming every bill was never the point; the operator
      wants click, beep, next. Switch it off to get the check screen back. */
-  /* trim the desk away and straighten the page, handheld */
-  get trim(){ return localStorage.getItem('st_trim') !== '0' },
+  /* Trim the desk away and straighten the page. Off unless asked for:
+     on a white desk the page cannot be told from the table. */
+  get trim(){ return localStorage.getItem('st_trim') === '1' },
   set trim(v){ localStorage.setItem('st_trim', v ? '1' : '0') },
+  /* Hard black-and-white "scanned" look. Off by default — on a shadowed
+     photo it crushes the page into blotches. */
+  get bw(){ return localStorage.getItem('st_bw') === '1' },
+  set bw(v){ localStorage.setItem('st_bw', v ? '1' : '0') },
   get auto(){ return localStorage.getItem('st_auto') !== '0' },
   set auto(v){ localStorage.setItem('st_auto', v ? '1' : '0') }
 };
@@ -249,7 +254,8 @@ async function stationShot(){
     const outW = 1700, outH = Math.max(600, Math.round(outW * ph / pw));
 
     if(st) st.textContent = 'Straightening…';
-    const page = scanLook(rectify(frame, quad, outW, outH));
+    const flat = rectify(frame, quad, outW, outH);
+    const page = ST.bw ? scanLook(flat) : flat;
 
     if(!worker){
       if(st) st.textContent = 'Loading the text engine…';
@@ -390,6 +396,8 @@ addEventListener('DOMContentLoaded', () => {
 
   const tr = document.getElementById('stTrim');
   if(tr){ tr.checked = ST.trim; tr.onchange = () => { ST.trim = tr.checked; }; }
+  const bw = document.getElementById('stBw');
+  if(bw){ bw.checked = ST.bw; bw.onchange = () => { ST.bw = bw.checked; }; }
   const au = document.getElementById('stAuto');
   if(au){ au.checked = ST.auto; au.onchange = () => { ST.auto = au.checked; }; }
   const on = document.getElementById('stOn'), bp = document.getElementById('stBeep');
@@ -501,5 +509,6 @@ function pageFrom(canvas, quad){
   const d = (a,b) => Math.hypot((q[a][0]-q[b][0])*w, (q[a][1]-q[b][1])*h);
   const pw = (d(0,1) + d(3,2)) / 2, ph = (d(0,3) + d(1,2)) / 2;
   const outW = 1700, outH = Math.max(500, Math.round(outW * ph / pw));
-  return scanLook(rectify(canvas, q, outW, outH));
+  const flat = rectify(canvas, q, outW, outH);
+  return ST.bw ? scanLook(flat) : flat;
 }

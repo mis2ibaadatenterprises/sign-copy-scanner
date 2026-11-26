@@ -160,6 +160,8 @@
     <div class="card">
       <h2>Tripod station</h2>
       <label class="gd"><input type="checkbox" id="stTrim"> Trim to the edges of the bill and flatten it</label>
+      <label class="gd"><input type="checkbox" id="stBw"> High-contrast black &amp; white (scanned look)</label>
+      <div class="hint">Both off by default — the bill is kept as a normal photo.</div>
       <label class="gd"><input type="checkbox" id="stAuto"> Upload straight away (skip the check screen)</label>
       <div class="hint">On by default. Turn it off only if you want to read each bill before it goes.</div>
       <label class="gd"><input type="checkbox" id="stOn"> Station mode (remote shutter, fixed tripod)</label>
@@ -542,7 +544,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '9';
+const APP_VERSION = '10';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -570,6 +572,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=9"></script>
+<script src="station.js?v=10"></script>
 </body>
 </html>
