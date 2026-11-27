@@ -20,9 +20,9 @@ const ST = {
   /* skip the confirm screen: capture goes straight to the board */
   /* Default ON. Confirming every bill was never the point; the operator
      wants click, beep, next. Switch it off to get the check screen back. */
-  /* Trim the desk away and straighten the page. Off unless asked for:
-     on a white desk the page cannot be told from the table. */
-  get trim(){ return localStorage.getItem('st_trim') === '1' },
+  /* Trim the desk away from around the bill. On by default; it refuses to
+     crop when it is not confident, so the worst case is no trimming. */
+  get trim(){ return localStorage.getItem('st_trim') !== '0' },
   set trim(v){ localStorage.setItem('st_trim', v ? '1' : '0') },
   /* Hard black-and-white "scanned" look. Off by default — on a shadowed
      photo it crushes the page into blotches. */

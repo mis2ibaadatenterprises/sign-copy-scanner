@@ -232,9 +232,38 @@ const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbwxgJfYStlWBqdWcs3a
 /* A bill number is PREFIX/DIGITS. Without that shape it is OCR noise:
    "WADALA" and "KICR" are not bill numbers and must never be saved as one. */
 const BILL_SHAPE = /^[A-Z0-9]{3,14}\/[0-9]{2,8}$/;
+
+/* OCR mixes up a few characters in the series code every time: the 1 in P1
+   comes back as A, I or L, and the S in SM as a 5. These are fixed by rule
+   rather than by nearest-match, because PACRS26 is exactly as close to
+   P2CRS26 as it is to P1CRS26 — guessing there would file P1 bills as P2. */
+const PREFIX_FIXES = [
+  [/^PA/, 'P1'], [/^PI/, 'P1'], [/^PL/, 'P1'], [/^P\|/, 'P1'],
+  [/^5M/, 'SM'], [/^SH/, 'SM'],
+  [/^K1/, 'KI'], [/^KL/, 'KI']
+];
+const KNOWN_PREFIX = ['P1CRS26', 'P2CRS26', 'SMCRS26', 'KICRS26'];
+
+function fixPrefix(bill){
+  const cut = bill.indexOf('/');
+  if(cut < 2) return bill;
+  let pre = bill.slice(0, cut);
+  const rest = bill.slice(cut);
+  for(const [re, to] of PREFIX_FIXES) if(re.test(pre)){ pre = pre.replace(re, to); break; }
+  /* after that, a single wrong character elsewhere in a known series is safe
+     to correct, because the first two characters now pin which series it is */
+  if(KNOWN_PREFIX.indexOf(pre) < 0){
+    const near = KNOWN_PREFIX.filter(k => k.length === pre.length && k.slice(0,2) === pre.slice(0,2) &&
+      k.split('').filter((ch, i) => ch !== pre[i]).length <= 1);
+    if(near.length === 1) pre = near[0];
+  }
+  return pre + rest;
+}
+
 function cleanBill(v){
   const b = String(v || '').toUpperCase().replace(/[^A-Z0-9/]/g, '');
-  return BILL_SHAPE.test(b) ? b : '';
+  if(!BILL_SHAPE.test(b)) return '';
+  return fixPrefix(b);
 }
 
 /* The division is printed in the bill number, not set on the phone. */
@@ -759,7 +788,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '21';
+const APP_VERSION = '22';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -834,6 +863,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=21"></script>
+<script src="station.js?v=22"></script>
 </body>
 </html>
