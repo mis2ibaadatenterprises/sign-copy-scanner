@@ -90,6 +90,11 @@
       <div class="card"><h2>Last few</h2><div id="stList"><div class="empty">Nothing yet.</div></div></div>
     </div>
     <div id="stNormal">
+      <div class="card" id="bulkNote" style="display:none">
+        <b>Still working through the batch</b>
+        <div class="hint">The camera waits until it finishes, so a new photo cannot be
+          mixed up with one still uploading. Tap ☰ to watch the progress.</div>
+      </div>
       <button class="big" id="bShoot">Capture invoice</button>
       <div style="height:10px"></div>
       <button class="big ghost" id="bPick">Use photo / camera roll</button>
@@ -752,7 +757,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '19';
+const APP_VERSION = '20';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -827,6 +832,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=19"></script>
+<script src="station.js?v=20"></script>
 </body>
 </html>

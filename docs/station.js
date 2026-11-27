@@ -35,8 +35,11 @@ const ST = {
 /* Straight-to-board upload, used whenever the confirm step is switched off.
  * Nothing is thrown away on a bad read: the bill still reaches the board as
  * NO-INV, where the bill number can be set by hand. */
-async function autoSend(r){
-  if(!current) return { state: 'no image', msg: 'nothing to send' };
+async function autoSend(r, shot){
+  /* The image is passed in: a batch and a hand capture must never be able to
+     overwrite each other's picture half way through an upload. */
+  const img = shot || current;
+  if(!img) return { state: 'no image', msg: 'nothing to send' };
   const nm = (x, fb) => { const c = String(x||'').trim().replace(/[\/\\:*?"<>|]+/g,'-')
                             .replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
                           return c || fb; };
@@ -46,8 +49,8 @@ async function autoSend(r){
     invoice: invoice, party: String(r.party||'').trim(),
     date: String(r.date||'').trim(), day: today(),
     godown: godownFor(invoice) || P.gd,       // P1 -> P1, P2 -> P2, SM -> SPM, KI -> Kid
-    shot: current.jpeg,
-    pdf: toPDF(current.jpeg, current.w, current.h)
+    shot: img.jpeg,
+    pdf: toPDF(img.jpeg, img.w, img.h)
   };
   toast('Uploading ' + (job.invoice || 'bill') + '…');
   let result = { state: 'sent', msg: '' };
@@ -80,8 +83,9 @@ async function autoSend(r){
       toast('No signal — saved, will upload itself','bad');
     }
   }
-  current = null;
-  if(!document.getElementById('scBulk').classList.contains('on')) show('scHome');
+  if(!shot) current = null;                 // only the hand flow owns `current`
+  const onBulk = document.getElementById('scBulk').classList.contains('on');
+  if(!shot && !onBulk) show('scHome');
   return result;
 }
 
@@ -634,8 +638,21 @@ function loadImage(file){
   });
 }
 
+let bulkBusy = false;
+
+function bulkLock(on){
+  bulkBusy = on;
+  ['bShoot','bPick','bkPick'].forEach(id => {
+    const b = document.getElementById(id);
+    if(b){ b.disabled = on; b.style.opacity = on ? .45 : 1; }
+  });
+  const n = document.getElementById('bulkNote');
+  if(n) n.style.display = on ? '' : 'none';
+}
+
 async function bulkRun(files){
   bulkStop = false;
+  bulkLock(true);
   if(!db && dbState === 'opening'){ try{ await openDB(); }catch(e){} }
   const rows = [];
   show('scBulk');
@@ -657,10 +674,10 @@ async function bulkRun(files){
       const page = ST.trim ? pageFrom(c, (ST.on && ST.quad) ? ST.quad : null) : null;
       let use = page || c;
       use = await uprightPage(use);
-      current = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
+      const shot = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
 
       const r = await stationRead(use);
-      const res = (await autoSend(r)) || { state: 'no answer', msg: '' };
+      const res = (await autoSend(r, shot)) || { state: 'no answer', msg: '' };
       const div = godownFor(cleanBill(r.inv));
       const label = { o13:'P1', o112:'P2', o118:'SPM', o13kid:'Kid' }[div] || 'this phone';
       rows.unshift({ inv: cleanBill(r.inv), party: (r.party || '') + ' · ' + label,
@@ -675,5 +692,6 @@ async function bulkRun(files){
 
   const st = document.getElementById('bkNow');
   if(st) st.textContent = bulkStop ? 'Stopped.' : 'All done.';
+  bulkLock(false);
   beep(true);
 }
