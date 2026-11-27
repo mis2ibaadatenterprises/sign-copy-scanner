@@ -273,7 +273,7 @@ async function send(job){
   let r = await call(body);
   if(!r.ok && expired(r.error)){ await signIn(); body.token = P.tok; r = await call(body); }
   if(!r.ok) { const e = new Error(r.error || 'rejected'); e.rejected = true; throw e; }
-  return r.data;
+  return r.data || null;
 }
 
 /* ---- camera ---- */
@@ -571,7 +571,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -599,6 +599,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=15"></script>
+<script src="station.js?v=16"></script>
 </body>
 </html>

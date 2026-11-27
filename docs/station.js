@@ -36,7 +36,7 @@ const ST = {
  * Nothing is thrown away on a bad read: the bill still reaches the board as
  * NO-INV, where the bill number can be set by hand. */
 async function autoSend(r){
-  if(!current) return;
+  if(!current) return { state: 'no image', msg: 'nothing to send' };
   const nm = (x, fb) => { const c = String(x||'').trim().replace(/[\/\\:*?"<>|]+/g,'-')
                             .replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
                           return c || fb; };
@@ -50,7 +50,12 @@ async function autoSend(r){
   let result = { state: 'sent', msg: '' };
   try{
     if(!navigator.onLine) throw new Error('offline');
-    await send(job);
+    const ack = await send(job);
+    /* The board answers with the Drive id of the file it wrote. No id means
+       no file, whatever else the reply said — never call that a success. */
+    if(!ack || !ack.id){
+      const e = new Error('board gave no file id'); e.rejected = true; throw e;
+    }
     beep(true);
     toast(job.invoice ? 'On the board — ' + job.invoice : 'On the board, but no bill number was read', 'good');
   }catch(e){
@@ -643,7 +648,7 @@ async function bulkRun(files){
       current = { jpeg: use.toDataURL('image/jpeg', page ? 0.72 : 0.8), w: use.width, h: use.height };
 
       const r = await stationRead(use);
-      const res = (await autoSend(r)) || { state: 'sent', msg: '' };
+      const res = (await autoSend(r)) || { state: 'no answer', msg: '' };
       rows.unshift({ inv: r.inv, party: r.party,
                      state: res.state === 'refused' ? ('refused: ' + res.msg).slice(0, 60) : res.state });
     }catch(e){
