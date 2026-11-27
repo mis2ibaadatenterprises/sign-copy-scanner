@@ -146,8 +146,9 @@
   <section class="screen" id="scFix">
     <div class="card">
       <h2>Bills needing a number</h2>
-      <div class="hint" id="fxHint">Anything sent without a readable bill number. Type the
-        number and it is saved onto the bill on the board, same as typing it there.</div>
+      <div class="hint" id="fxHint">Anything sent without a readable bill number. Tap View bill
+        to see the photo, read the number off it, and type it in — it is saved onto the bill on
+        the board, same as typing it there.</div>
     </div>
     <div id="fxList"></div>
     <button class="big ghost" id="fxAll">Show everything sent today</button>
@@ -655,7 +656,15 @@ function fxDraw(){
     '<div class="card">' +
       '<div style="font-weight:700">' + (e.inv || '— no number —') + '</div>' +
       '<div class="hint">' + (e.party || '—') + ' · ' + (e.t || '') + '</div>' +
+      '<div id="fxImg' + i + '" style="display:none;margin-top:10px">' +
+        '<img src="https://drive.google.com/thumbnail?id=' + encodeURIComponent(e.id) + '&sz=w1400" ' +
+          'alt="" style="width:100%;border-radius:10px;border:1px solid var(--line)" ' +
+          'onerror="this.parentNode.innerHTML=\'<a href=&quot;https://drive.google.com/file/d/' +
+          encodeURIComponent(e.id) + '/view&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;>Open the bill in Drive</a>\'">' +
+      '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">' +
+        '<button class="btn" data-see="' + i + '" style="padding:11px 14px;border:1px solid var(--line);' +
+          'border-radius:10px;background:#fff;color:var(--ink);font-weight:600;font-family:inherit">View bill</button>' +
         '<select data-sel="' + i + '" style="padding:11px;border-radius:10px;border:1px solid var(--line);font:inherit">' +
           BILL_PREFIXES.map(p => '<option value="' + p + '">' + p + '</option>').join('') +
           '<option value="">Other…</option>' +
@@ -666,6 +675,14 @@ function fxDraw(){
           'background:var(--gold);color:var(--navy);font-weight:700;font-family:inherit">Save</button>' +
       '</div>' +
     '</div>').join('');
+
+  $('fxList').querySelectorAll('button[data-see]').forEach(b => b.onclick = () => {
+    const box = $('fxImg' + b.dataset.see);
+    const open = box.style.display !== 'none';
+    box.style.display = open ? 'none' : '';
+    b.textContent = open ? 'View bill' : 'Hide bill';
+    if(!open) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
 
   $('fxList').querySelectorAll('button[data-save]').forEach(b => b.onclick = async () => {
     const i = +b.dataset.save, e = rows[i];
@@ -713,7 +730,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '18';
+const APP_VERSION = '19';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -763,6 +780,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=18"></script>
+<script src="station.js?v=19"></script>
 </body>
 </html>
