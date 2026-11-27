@@ -46,6 +46,7 @@ async function autoSend(r){
     invoice: invoice, party: String(r.party||'').trim(),
     date: String(r.date||'').trim(), day: today(),
     godown: godownFor(invoice) || P.gd,       // P1 -> P1, P2 -> P2, SM -> SPM, KI -> Kid
+    shot: current.jpeg,
     pdf: toPDF(current.jpeg, current.w, current.h)
   };
   toast('Uploading ' + (job.invoice || 'bill') + '…');
@@ -60,7 +61,8 @@ async function autoSend(r){
     }
     beep(true);
     recentAdd({ t: new Date().toLocaleTimeString(), inv: job.invoice, party: job.party,
-                id: ack.id, key: job.godown });
+                id: ack.id, key: job.godown,
+                thumb: job.invoice ? '' : await makeThumb(job.shot || '', 420) });
     note('sent ' + (job.invoice || 'no number') + ' · file ' + String(ack.id).slice(0,8));
     toast(job.invoice ? 'On the board — ' + job.invoice : 'On the board, but no bill number was read', 'good');
   }catch(e){
@@ -71,6 +73,7 @@ async function autoSend(r){
       note('refused: ' + result.msg);
       toast('Rejected: ' + result.msg, 'bad');
     } else {
+      delete job.shot;                      // the PDF is already in the job; no need for the photo too
       await qAdd(job); await paint(); beep(true);
       result = { state: 'queued', msg: '' };
       note('queued (no signal)');

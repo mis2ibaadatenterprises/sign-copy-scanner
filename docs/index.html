@@ -656,6 +656,14 @@ function fxDraw(){
     '<div class="card">' +
       '<div style="font-weight:700">' + (e.inv || '— no number —') + '</div>' +
       '<div class="hint">' + (e.party || '—') + ' · ' + (e.t || '') + '</div>' +
+      (e.id || e.thumb ?
+        '<div style="margin:10px 0">' +
+          '<img data-zoom="' + i + '" alt="the bill" ' +
+            'src="' + (e.id ? 'https://drive.google.com/thumbnail?id=' + e.id + '&sz=w1000' : e.thumb) + '" ' +
+            (e.thumb ? 'data-fallback="' + e.thumb + '" ' : '') +
+            'style="width:100%;border-radius:10px;border:1px solid var(--line);display:block;cursor:zoom-in">' +
+          '<div class="hint">Tap the photo to see it full size</div>' +
+        '</div>' : '') +
       '<div id="fxImg' + i + '" style="display:none;margin-top:10px">' +
         '<img src="https://drive.google.com/thumbnail?id=' + encodeURIComponent(e.id) + '&sz=w1400" ' +
           'alt="" style="width:100%;border-radius:10px;border:1px solid var(--line)" ' +
@@ -682,6 +690,20 @@ function fxDraw(){
     box.style.display = open ? 'none' : '';
     b.textContent = open ? 'View bill' : 'Hide bill';
     if(!open) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+
+  $('fxList').querySelectorAll('img[data-zoom]').forEach(img => {
+    img.onerror = () => {
+      const fb = img.dataset.fallback;
+      if(fb && img.src !== fb){ img.src = fb; }
+      else { img.replaceWith(Object.assign(document.createElement('div'),
+             { className:'hint', textContent:'The photo could not be loaded here — open it on the board.' })); }
+    };
+    img.onclick = () => {
+      const e = rows[+img.dataset.zoom];
+      if(e.id) window.open('https://drive.google.com/file/d/' + e.id + '/view', '_blank', 'noopener');
+      else if(e.thumb) window.open(e.thumb, '_blank');
+    };
   });
 
   $('fxList').querySelectorAll('button[data-save]').forEach(b => b.onclick = async () => {
@@ -753,7 +775,32 @@ async function checkVersion(){
    afterwards instead of being rescanned. */
 function recentAll(){ try{ return JSON.parse(localStorage.getItem('recent') || '[]'); }catch(e){ return []; } }
 function recentSave(v){ try{ localStorage.setItem('recent', JSON.stringify(v.slice(0, 80))); }catch(e){} }
-function recentAdd(e){ const a = recentAll(); a.unshift(e); recentSave(a); }
+function recentAdd(e){
+  const a = recentAll();
+  a.unshift(e);
+  /* thumbnails are only needed on the newest few, and they are what fills
+     up phone storage, so older ones lose theirs */
+  a.forEach((x, i) => { if(i > 14) delete x.thumb; });
+  recentSave(a);
+}
+
+/* A small picture of the bill, so the number can be read on the fix screen
+   even before Drive serves its own thumbnail. */
+function makeThumb(jpeg, w){
+  return new Promise(res => {
+    try{
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = Math.max(1, Math.round(img.height * w / img.width));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/jpeg', 0.5));
+      };
+      img.onerror = () => res('');
+      img.src = jpeg;
+    }catch(e){ res(''); }
+  });
+}
 function recentSet(id, inv){
   const a = recentAll();
   a.forEach(e => { if(e.id === id) e.inv = inv; });
