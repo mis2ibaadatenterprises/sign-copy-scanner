@@ -555,10 +555,17 @@ function detectPage(src){
       col[xx] += gx; row[y] += gy;
     }
   }
+  /* The bar used to be a quarter of the single largest value in the profile.
+     One hard edge - a table rule, the desk boundary, a staple, the QR block -
+     then set it so high that every real paper edge fell under it and the page
+     was missed altogether. Measured against the middle of the profile, the
+     bar follows the picture instead of its loudest pixel. */
   const outer = (prof, n) => {
-    let max = 0;
-    for(let i = 0; i < n; i++) if(prof[i] > max) max = prof[i];
-    const thr = max * 0.25;
+    const v = Array.from(prof.slice(1, n - 1)).sort((p, q) => p - q);
+    if(!v.length) return [0, n - 1];
+    const at = f => v[Math.min(v.length - 1, Math.max(0, Math.round(f * (v.length - 1))))];
+    const mid = at(0.5), hi = at(0.9);
+    const thr = mid + 0.35 * (hi - mid);
     let a = 0, b = n - 1;
     while(a < n && prof[a] <= thr) a++;
     while(b > a && prof[b] <= thr) b--;
@@ -568,8 +575,12 @@ function detectPage(src){
   const [y0, y1] = outer(row, H);
 
   const w = (x1 - x0) / W, h = (y1 - y0) / H;
-  if(w * h < 0.35) return null;          // too small to be the page: do not risk it
-  if(w * h > 0.95) return null;          // nothing worth trimming
+  /* A sliver is not a page. But a bill shot from a little way back covers far
+     less than the 35% of the frame area this used to insist on, and the whole
+     photo - desk included - was then read untrimmed. Each side now has to be
+     a fair part of the frame; their product no longer has to be. */
+  if(w < 0.30 || h < 0.30) return null;    // too small to be the page
+  if(w * h > 0.95) return null;            // nothing worth trimming
   const pad = 0.012;
   const L = Math.max(0, x0 / W - pad), R = Math.min(1, x1 / W + pad);
   const T = Math.max(0, y0 / H - pad), B = Math.min(1, y1 / H + pad);
