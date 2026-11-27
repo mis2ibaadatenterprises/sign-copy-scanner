@@ -40,10 +40,12 @@ async function autoSend(r){
   const nm = (x, fb) => { const c = String(x||'').trim().replace(/[\/\\:*?"<>|]+/g,'-')
                             .replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
                           return c || fb; };
+  const invoice = cleanBill(r.inv);          // junk like "WADALA" never becomes a bill number
   const job = {
-    filename: nm(r.inv,'NO-INV') + '_' + nm(r.party,'NO-PARTY') + '_' + nm(r.date,'NO-DATE') + '.pdf',
-    invoice: String(r.inv||'').trim(), party: String(r.party||'').trim(),
+    filename: nm(invoice,'NO-INV') + '_' + nm(r.party,'NO-PARTY') + '_' + nm(r.date,'NO-DATE') + '.pdf',
+    invoice: invoice, party: String(r.party||'').trim(),
     date: String(r.date||'').trim(), day: today(),
+    godown: godownFor(invoice) || P.gd,       // P1 -> P1, P2 -> P2, SM -> SPM, KI -> Kid
     pdf: toPDF(current.jpeg, current.w, current.h)
   };
   toast('Uploading ' + (job.invoice || 'bill') + '…');
@@ -57,6 +59,8 @@ async function autoSend(r){
       const e = new Error('board gave no file id'); e.rejected = true; throw e;
     }
     beep(true);
+    recentAdd({ t: new Date().toLocaleTimeString(), inv: job.invoice, party: job.party,
+                id: ack.id, key: job.godown });
     note('sent ' + (job.invoice || 'no number') + ' · file ' + String(ack.id).slice(0,8));
     toast(job.invoice ? 'On the board — ' + job.invoice : 'On the board, but no bill number was read', 'good');
   }catch(e){
@@ -333,11 +337,13 @@ async function stationShot(){
     const upright = await uprightPage(page);
     const r = await stationRead(upright);
 
+    const inv = cleanBill(r.inv);
     const job = {
-      filename: (r.inv ? r.inv.replace(/[\/\\:*?"<>|]+/g,'-') : 'NO-INV') + '_' +
+      filename: (inv ? inv.replace(/[\/\\:*?"<>|]+/g,'-') : 'NO-INV') + '_' +
                 (r.party ? r.party.replace(/\s+/g,'-') : 'NO-PARTY') + '_' +
                 (r.date || 'NO-DATE') + '.pdf',
-      invoice: r.inv, party: r.party, date: r.date, day: today(),
+      invoice: inv, party: r.party, date: r.date, day: today(),
+      godown: godownFor(inv) || P.gd,
       pdf: toPDF(page.toDataURL('image/jpeg', 0.75), page.width, page.height)
     };
 
@@ -652,7 +658,9 @@ async function bulkRun(files){
 
       const r = await stationRead(use);
       const res = (await autoSend(r)) || { state: 'no answer', msg: '' };
-      rows.unshift({ inv: r.inv, party: r.party,
+      const div = godownFor(cleanBill(r.inv));
+      const label = { o13:'P1', o112:'P2', o118:'SPM', o13kid:'Kid' }[div] || 'this phone';
+      rows.unshift({ inv: cleanBill(r.inv), party: (r.party || '') + ' · ' + label,
                      state: res.state === 'refused' ? ('refused: ' + res.msg).slice(0, 60) : res.state });
     }catch(e){
       const why = (e && (e.message || e.name)) ? String(e.message || e.name) : String(e);

@@ -143,8 +143,22 @@
     <button class="big ghost" id="bkDone">Back to camera</button>
   </section>
 
+  <section class="screen" id="scFix">
+    <div class="card">
+      <h2>Bills needing a number</h2>
+      <div class="hint" id="fxHint">Anything sent without a readable bill number. Type the
+        number and it is saved onto the bill on the board, same as typing it there.</div>
+    </div>
+    <div id="fxList"></div>
+    <button class="big ghost" id="fxAll">Show everything sent today</button>
+    <div style="height:10px"></div>
+    <button class="big ghost" id="fxBack">Back to camera</button>
+  </section>
+
   <section class="screen" id="scQueue">
     <div class="card"><h2>Waiting to upload</h2><div id="qlist"></div></div>
+    <button class="big" id="bFix">Fix missing bill numbers</button>
+    <div style="height:10px"></div>
     <button class="big" id="bFlush">Try again now</button>
     <div style="height:10px"></div>
     <button class="big ghost" id="bBack1">Back to camera</button>
@@ -209,6 +223,26 @@
 /* The board this scanner feeds. Overridable in Settings if it ever moves. */
 const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbwxgJfYStlWBqdWcs3aB7W3m5-188rNAm0eZYXG-IqSOA8xHpVfcv1qRcq_c326sUqi/exec';
 
+/* A bill number is PREFIX/DIGITS. Without that shape it is OCR noise:
+   "WADALA" and "KICR" are not bill numbers and must never be saved as one. */
+const BILL_SHAPE = /^[A-Z0-9]{3,14}\/[0-9]{2,8}$/;
+function cleanBill(v){
+  const b = String(v || '').toUpperCase().replace(/[^A-Z0-9/]/g, '');
+  return BILL_SHAPE.test(b) ? b : '';
+}
+
+/* The division is printed in the bill number, not set on the phone. */
+const DIVISION = [[/^P1/, 'o13'], [/^P2/, 'o112'], [/^SM/, 'o118'], [/^KI/, 'o13kid']];
+function godownFor(bill){
+  const b = String(bill || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  for(const [re, key] of DIVISION){
+    if(re.test(b)) return P.list.some(g => g.key === key) ? key : '';
+  }
+  return '';
+}
+
+const BILL_PREFIXES = ['P1CRS26/', 'P2CRS26/', 'SMCRS26/', 'KICRS26/'];
+
 const $ = id => document.getElementById(id);
 const show = id => { document.querySelectorAll('.screen').forEach(s => s.classList.remove('on')); $(id).classList.add('on'); };
 let tT; function toast(m, k){ const t=$('toast'); t.textContent=m; t.className='toast on'+(k?' '+k:'');
@@ -268,7 +302,7 @@ async function signIn(){
 async function send(job){
   if(!P.tok) await signIn();
   const body = {
-    action:'upload', token:P.tok, godown:P.gd, date:job.day, section:'signcopy',
+    action:'upload', token:P.tok, godown:(job.godown || P.gd), date:job.day, section:'signcopy',
     name:job.filename, mime:'application/pdf', data:job.pdf,
     bill:job.invoice, note:job.party, by:P.who
   };
@@ -443,10 +477,10 @@ const tidy = s => String(s||'').replace(/\s+/g,' ').trim();
 function parse(text){
   const lines = text.split('\n').map(tidy).filter(Boolean), flat = lines.join(' | ');
   const o = { inv:'', party:'', date:'', cI:0, cP:0, cD:0 };
-  let m = text.match(/Invoice\s*No[^A-Za-z0-9]{0,12}([A-Z0-9][A-Z0-9\/\-]{3,24})/i);
-  if(m){ o.inv = m[1].toUpperCase().replace(/[^A-Z0-9\/\-]/g,''); o.cI = .9; }
-  if(!o.inv){ m = flat.match(/\b([A-Z]{1,4}\d?[A-Z]{0,4}\d{2}\/\d{3,6})\b/);
-    if(m){ o.inv = m[1].toUpperCase(); o.cI = .6; } }
+  let m = text.match(/Invoice\s*No[^A-Za-z0-9]{0,12}([A-Z0-9]{3,14}\s*\/\s*[0-9]{2,8})/i);
+  if(m){ o.inv = cleanBill(m[1]); o.cI = o.inv ? .9 : 0; }
+  if(!o.inv){ m = flat.match(/\b([A-Z]{1,4}\d?[A-Z]{0,4}\d{2}\s*\/\s*\d{2,8})\b/);
+    if(m){ o.inv = cleanBill(m[1]); o.cI = o.inv ? .6 : 0; } }
   m = text.match(/Invoice\s*Date[^0-9]{0,12}(\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4})/i);
   if(m){ o.date = norm(m[1]); o.cD = .9; }
   if(!o.date){ m = flat.match(/\b(\d{2}[-\/.]\d{2}[-\/.]\d{4})\b/); if(m){ o.date = norm(m[1]); o.cD = .5; } }
@@ -601,6 +635,55 @@ $('bUp').onclick = async () => {
   current=null; b.disabled=false; b.textContent='Upload to board'; show('scHome');
 };
 
+/* ---- fixing a bill number after the upload ----
+   The board accepts a correction for a file that is already on it, so a bill
+   that went up unread does not have to be scanned again. */
+let fxShowAll = false;
+
+function fxDraw(){
+  const all = recentAll().filter(e => e.id);
+  const rows = fxShowAll ? all : all.filter(e => !e.inv);
+  $('fxAll').textContent = fxShowAll ? 'Show only the ones missing a number'
+                                     : 'Show everything sent today';
+  if(!rows.length){
+    $('fxList').innerHTML = '<div class="card"><div class="empty">' +
+      (fxShowAll ? 'Nothing sent from this phone yet.' : 'Every bill sent from this phone has a number.') +
+      '</div></div>';
+    return;
+  }
+  $('fxList').innerHTML = rows.map((e, i) =>
+    '<div class="card">' +
+      '<div style="font-weight:700">' + (e.inv || '— no number —') + '</div>' +
+      '<div class="hint">' + (e.party || '—') + ' · ' + (e.t || '') + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">' +
+        '<select data-sel="' + i + '" style="padding:11px;border-radius:10px;border:1px solid var(--line);font:inherit">' +
+          BILL_PREFIXES.map(p => '<option value="' + p + '">' + p + '</option>').join('') +
+          '<option value="">Other…</option>' +
+        '</select>' +
+        '<input data-num="' + i + '" inputmode="numeric" placeholder="number after the /" ' +
+          'style="flex:1;min-width:110px;padding:11px;border-radius:10px;border:1px solid var(--line);font:inherit">' +
+        '<button class="btn" data-save="' + i + '" style="padding:11px 16px;border:0;border-radius:10px;' +
+          'background:var(--gold);color:var(--navy);font-weight:700;font-family:inherit">Save</button>' +
+      '</div>' +
+    '</div>').join('');
+
+  $('fxList').querySelectorAll('button[data-save]').forEach(b => b.onclick = async () => {
+    const i = +b.dataset.save, e = rows[i];
+    const sel = $('fxList').querySelector('select[data-sel="' + i + '"]');
+    const num = $('fxList').querySelector('input[data-num="' + i + '"]');
+    const full = ((sel.value || '') + num.value.trim()).toUpperCase();
+    if(!num.value.trim()){ toast('Type the number first', 'bad'); return; }
+    b.disabled = true; b.textContent = 'Saving…';
+    try{
+      if(!P.tok) await signIn();
+      let r = await call({ action:'setbill', token:P.tok, key:e.key, fileId:e.id, no:full });
+      if(!r.ok && expired(r.error)){ await signIn(); r = await call({ action:'setbill', token:P.tok, key:e.key, fileId:e.id, no:full }); }
+      if(r.ok && r.data && r.data.ok){ recentSet(e.id, r.data.bill || full); toast('Saved — ' + (r.data.bill || full), 'good'); fxDraw(); }
+      else { toast(r.error || 'The board did not accept that', 'bad'); b.disabled = false; b.textContent = 'Save'; }
+    }catch(err){ toast('Could not reach the board', 'bad'); b.disabled = false; b.textContent = 'Save'; }
+  });
+}
+
 /* ---- settings ---- */
 function drawGodowns(){
   const l = P.list;
@@ -615,6 +698,9 @@ $('navS').onclick = ()=>{ $('sUrl').value=P.url; $('sId').value=P.id; $('sPw').v
 $('navQ').onclick = ()=>{ show('scQueue'); paint(); };
 $('bBack1').onclick = $('bBack2').onclick = ()=>show('scHome');
 $('bFlush').onclick = ()=>{ toast('Trying…'); flush(); };
+$('bFix').onclick = ()=>{ fxShowAll = false; fxDraw(); show('scFix'); };
+$('fxBack').onclick = ()=>show('scHome');
+$('fxAll').onclick = ()=>{ fxShowAll = !fxShowAll; fxDraw(); };
 $('bSave').onclick = async ()=>{
   P.url = $('sUrl').value || DEFAULT_URL; P.id = $('sId').value; P.pw = $('sPw').value; P.tok='';
   const b=$('bSave'); b.disabled=true; b.textContent='Signing in…';
@@ -627,7 +713,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '17';
+const APP_VERSION = '18';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -644,6 +730,17 @@ async function checkVersion(){
         (location.search ? '&' : '?') + 'v=' + v);
     }
   }catch(e){}
+}
+
+/* A short history of what was sent, so a bill with no number can be fixed
+   afterwards instead of being rescanned. */
+function recentAll(){ try{ return JSON.parse(localStorage.getItem('recent') || '[]'); }catch(e){ return []; } }
+function recentSave(v){ try{ localStorage.setItem('recent', JSON.stringify(v.slice(0, 80))); }catch(e){} }
+function recentAdd(e){ const a = recentAll(); a.unshift(e); recentSave(a); }
+function recentSet(id, inv){
+  const a = recentAll();
+  a.forEach(e => { if(e.id === id) e.inv = inv; });
+  recentSave(a);
 }
 
 function note(txt){
@@ -666,6 +763,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=17"></script>
+<script src="station.js?v=18"></script>
 </body>
 </html>
