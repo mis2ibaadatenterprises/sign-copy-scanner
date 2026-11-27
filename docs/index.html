@@ -229,42 +229,56 @@
 /* The board this scanner feeds. Overridable in Settings if it ever moves. */
 const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbwxgJfYStlWBqdWcs3aB7W3m5-188rNAm0eZYXG-IqSOA8xHpVfcv1qRcq_c326sUqi/exec';
 
-/* A bill number is PREFIX/DIGITS. Without that shape it is OCR noise:
-   "WADALA" and "KICR" are not bill numbers and must never be saved as one. */
-const BILL_SHAPE = /^[A-Z0-9]{3,14}\/[0-9]{2,8}$/;
+/* A bill number is one of ours or it is nothing at all.
+   Division code, series, two year digits, slash, running number:
+     bill         P1CRS26/2579   P2CRS26/..   SMCRS26/..   KICRS26/..
+     credit note  P1CRSR26/418   P2CRSR26/..  SMCRSR26/..  KICRSR26/..
+   P1 = P1 Division, P2 = P2, SM = SPM, KI = Kid. The year is read as it
+   comes, so 27-28 keeps working with no change here. */
+const BILL_SHAPE = /^(P1|P2|SM|KI)CRSR?[0-9]{2}\/[0-9]{1,6}$/;
 
-/* OCR mixes up a few characters in the series code every time: the 1 in P1
-   comes back as A, I or L, and the S in SM as a 5. These are fixed by rule
-   rather than by nearest-match, because PACRS26 is exactly as close to
-   P2CRS26 as it is to P1CRS26 — guessing there would file P1 bills as P2. */
-const PREFIX_FIXES = [
-  [/^PA/, 'P1'], [/^PI/, 'P1'], [/^PL/, 'P1'], [/^P\|/, 'P1'],
-  [/^5M/, 'SM'], [/^SH/, 'SM'],
-  [/^K1/, 'KI'], [/^KL/, 'KI']
+/* OCR mixes up the same few characters in the series code every time: the 1
+   in P1 comes back as A, I, L or T, and the S in SM as a 5. A token that is
+   not in this table is not one of our numbers, which is how party names, GST
+   numbers, phone numbers, dates and challan numbers all fall out here. */
+const DIV_FIXES = [
+  [/^[PFRB][1ILTA!|]$/, 'P1'],
+  [/^[PFRB][2Z]$/,      'P2'],
+  [/^[S5$][MNH]$/,      'SM'],
+  [/^[KX][1ILTA!|]$/,   'KI']
 ];
-const KNOWN_PREFIX = ['P1CRS26', 'P2CRS26', 'SMCRS26', 'KICRS26'];
-
-function fixPrefix(bill){
-  const cut = bill.indexOf('/');
-  if(cut < 2) return bill;
-  let pre = bill.slice(0, cut);
-  const rest = bill.slice(cut);
-  for(const [re, to] of PREFIX_FIXES) if(re.test(pre)){ pre = pre.replace(re, to); break; }
-  /* after that, a single wrong character elsewhere in a known series is safe
-     to correct, because the first two characters now pin which series it is */
-  if(KNOWN_PREFIX.indexOf(pre) < 0){
-    const near = KNOWN_PREFIX.filter(k => k.length === pre.length && k.slice(0,2) === pre.slice(0,2) &&
-      k.split('').filter((ch, i) => ch !== pre[i]).length <= 1);
-    if(near.length === 1) pre = near[0];
-  }
-  return pre + rest;
+function divCode(tok){
+  const t = String(tok || '').toUpperCase();
+  for(const [re, to] of DIV_FIXES) if(re.test(t)) return to;
+  return '';
 }
+function fixPrefix(bill){ return String(bill || '').toUpperCase().trim(); }
+
+/* The text is searched for that one shape and for nothing else, so no label
+   like "Invoice No" has to survive the photo for the number to be found.
+   Spaces and dots inside the number are allowed, and so are the usual swaps:
+   O for 0, I or L for 1, S for 5, B for 8, a 1 or a bar instead of the "/". */
+const BILL_SCAN = /(^|[^A-Z0-9])([A-Z0-9$!|]{2})[\s.\-]*([CGQO0])[\s.\-]*([RP])[\s.\-]*([S5$])[\s.\-]*([RP]?)[\s.\-]*([0-9OILZSB]{2})[\s.\-]*[\/\\|1IL][\s.\-]*([0-9OILZSB]{1,6})(?![0-9])/g;
+const billDigits = s => String(s || '').toUpperCase()
+  .replace(/[OD]/g, '0').replace(/[IL|!]/g, '1')
+  .replace(/Z/g, '2').replace(/S/g, '5').replace(/B/g, '8');
 
 function cleanBill(v){
-  const b = String(v || '').toUpperCase().replace(/[^A-Z0-9/]/g, '');
-  if(!BILL_SHAPE.test(b)) return '';
-  return fixPrefix(b);
+  const t = String(v || '').replace(/ /g, ' ').toUpperCase();
+  const seen = new Map();
+  let m; BILL_SCAN.lastIndex = 0;
+  while((m = BILL_SCAN.exec(t)) !== null){
+    const div = divCode(m[2]); if(!div) continue;
+    const yr = billDigits(m[7]);
+    const no = billDigits(m[8]).replace(/^0+(?=[0-9])/, '');
+    const cand = div + 'CRS' + (m[6] ? 'R' : '') + yr + '/' + no;
+    if(!BILL_SHAPE.test(cand)) continue;
+    seen.set(cand, (seen.get(cand) || 0) + 1);
+  }
+  if(!seen.size) return '';
+  return [...seen.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
+
 
 /* The division is printed in the bill number, not set on the phone. */
 const DIVISION = [[/^P1/, 'o13'], [/^P2/, 'o112'], [/^SM/, 'o118'], [/^KI/, 'o13kid']];
@@ -276,7 +290,8 @@ function godownFor(bill){
   return '';
 }
 
-const BILL_PREFIXES = ['P1CRS26/', 'P2CRS26/', 'SMCRS26/', 'KICRS26/'];
+const BILL_PREFIXES = ['P1CRS26/', 'P2CRS26/', 'SMCRS26/', 'KICRS26/',
+                       'P1CRSR26/', 'P2CRSR26/', 'SMCRSR26/', 'KICRSR26/'];
 
 const $ = id => document.getElementById(id);
 const show = id => { document.querySelectorAll('.screen').forEach(s => s.classList.remove('on')); $(id).classList.add('on'); };
@@ -476,19 +491,10 @@ async function ocr(canvas){
     }
     await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' });
 
-    /* 2. Party name, from the billing column only. Any wider and the
-       shipping column repeats the name into the same line. */
-    $('readMsg').textContent = 'Reading the party name…'; $('bar').style.width = '60%';
+    /* 2. The whole page, only when none of the framings held a number. */
     let out = top;
-    for(const [fx,fy,fw,fh,z] of [[.10,.16,.32,.14,3],[.08,.14,.38,.20,3]]){
-      const r = parse(await read('party name', crop(canvas, fx, fy, fw, fh, z)));
-      out = merge(out, r);
-      if(out.party) break;
-    }
-
-    /* 3. Whole page, only to fill what is still missing. */
-    if(!out.inv || !out.party || !out.date){
-      $('readMsg').textContent = 'Checking the whole page…'; $('bar').style.width = '85%';
+    if(!out.inv){
+      $('readMsg').textContent = 'Checking the whole page\u2026'; $('bar').style.width = '85%';
       out = merge(out, parse(await read('whole page', canvas)));
     }
 
@@ -509,25 +515,13 @@ async function ocr(canvas){
 
 /* ---- field extraction ---- */
 const tidy = s => String(s||'').replace(/\s+/g,' ').trim();
+/* Only the bill number is read. Party name and date are deliberately not
+   looked for any more - the board is searched on the bill number alone. */
 function parse(text){
-  const lines = text.split('\n').map(tidy).filter(Boolean), flat = lines.join(' | ');
-  const o = { inv:'', party:'', date:'', cI:0, cP:0, cD:0 };
-  let m = text.match(/Invoice\s*No[^A-Za-z0-9]{0,12}([A-Z0-9]{3,14}\s*\/\s*[0-9]{2,8})/i);
-  if(m){ o.inv = cleanBill(m[1]); o.cI = o.inv ? .9 : 0; }
-  if(!o.inv){ m = flat.match(/\b([A-Z]{1,4}\d?[A-Z]{0,4}\d{2}\s*\/\s*\d{2,8})\b/);
-    if(m){ o.inv = cleanBill(m[1]); o.cI = o.inv ? .6 : 0; } }
-  m = text.match(/Invoice\s*Date[^0-9]{0,12}(\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4})/i);
-  if(m){ o.date = norm(m[1]); o.cD = .9; }
-  if(!o.date){ m = flat.match(/\b(\d{2}[-\/.]\d{2}[-\/.]\d{4})\b/); if(m){ o.date = norm(m[1]); o.cD = .5; } }
-  [[/billing\s*addr/i,.85],[/shipping\s*addr/i,.65]].forEach(([re,cf])=>{
-    if(o.party) return;
-    const i = lines.findIndex(l => re.test(l)); if(i < 0) return;
-    for(let j=i+1;j<Math.min(i+6,lines.length);j++){ const n = name(lines[j]); if(n){ o.party=n; o.cP=cf; break; } }
-  });
-  if(!o.party){ const i = lines.findIndex(l=>/shop\s*no|chawl|marg|plot\s*no|road/i.test(l));
-    if(i>0){ const n = name(lines[i-1]); if(n){ o.party=n; o.cP=.4; } } }
-  return o;
+  const inv = cleanBill(text);
+  return { inv, party: '', date: '', cI: inv ? .9 : 0, cP: 0, cD: 0 };
 }
+
 function name(line){
   let s = tidy(line).replace(/^[^A-Za-z]+/,'').replace(/[|:]+$/,'');
   if(s.length<5||s.length>60) return '';
@@ -548,16 +542,20 @@ function tag(el, c, got){
   el.style.color = !got ? 'var(--warn)' : c>=.8 ? 'var(--ok)' : 'var(--wait)';
 }
 function fill(r){
-  $('fInv').value=r.inv; $('fParty').value=r.party; $('fDate').value=r.date;
-  tag($('tInv'),r.cI,r.inv); tag($('tParty'),r.cP,r.party); tag($('tDate'),r.cD,r.date);
+  $('fInv').value = r.inv; $('fParty').value = ''; $('fDate').value = '';
+  tag($('tInv'), r.cI, r.inv);
+  /* Party and date are no longer read, so these two say nothing rather than
+     reporting themselves as missing. */
+  $('tParty').textContent = ''; $('tDate').textContent = '';
   $('rawText').textContent = lastRaw || '(nothing captured)';
   rename();
   if(typeof ST !== 'undefined' && ST.auto && current){ autoSend(r); return; }
   show('scConfirm');
-  if(!r.inv || !r.party) toast('Some fields need typing in','bad');
+  if(!r.inv) toast('Type the bill number in', 'bad');
 }
+
 const safe = s => tidy(s).replace(/[\/\\:*?"<>|]+/g,'-').replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
-const filename = () => (safe($('fInv').value)||'NO-INV')+'_'+(safe($('fParty').value)||'NO-PARTY')+'_'+(safe($('fDate').value)||'NO-DATE')+'.pdf';
+const filename = () => (safe($('fInv').value) || 'NO-INV') + '.pdf';
 function rename(){ $('fname').textContent = filename(); }
 ['fInv','fParty','fDate'].forEach(i=>$(i).addEventListener('input', rename));
 $('bRetake').onclick = ()=>{ current=null; show('scHome'); };
