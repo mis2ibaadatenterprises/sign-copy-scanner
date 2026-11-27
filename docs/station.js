@@ -57,16 +57,19 @@ async function autoSend(r){
       const e = new Error('board gave no file id'); e.rejected = true; throw e;
     }
     beep(true);
+    note('sent ' + (job.invoice || 'no number') + ' · file ' + String(ack.id).slice(0,8));
     toast(job.invoice ? 'On the board — ' + job.invoice : 'On the board, but no bill number was read', 'good');
   }catch(e){
     if(e.rejected){
       /* The board refused it. Queueing would just fail again, so say so. */
       beep(false);
       result = { state: 'refused', msg: String(e.message || e) };
+      note('refused: ' + result.msg);
       toast('Rejected: ' + result.msg, 'bad');
     } else {
       await qAdd(job); await paint(); beep(true);
       result = { state: 'queued', msg: '' };
+      note('queued (no signal)');
       toast('No signal — saved, will upload itself','bad');
     }
   }
@@ -624,7 +627,7 @@ function loadImage(file){
 
 async function bulkRun(files){
   bulkStop = false;
-  if(typeof db === 'undefined' || !db){ try{ await openDB(); }catch(e){} }
+  if(!db && dbState === 'opening'){ try{ await openDB(); }catch(e){} }
   const rows = [];
   show('scBulk');
   bulkPaint(0, files.length, rows);

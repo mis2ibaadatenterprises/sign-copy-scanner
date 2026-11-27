@@ -1,4 +1,4 @@
-const CORE = 'sign-core-v16', RT = 'sign-rt-v1';
+const CORE = 'sign-core-v17', RT = 'sign-rt-v1';
 const SHELL = ['./', './index.html', './manifest.json', './station.js', './version.txt', './icon-180.png'];
 
 self.addEventListener('install', e => {

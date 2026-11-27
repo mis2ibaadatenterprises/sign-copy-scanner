@@ -192,6 +192,8 @@
       <div class="field"><label>Web app URL</label><input id="sUrl" autocomplete="off"></div>
       <div class="hint">Already set for Ibaadat. Change it only if the board moves.</div>
       <div class="hint" id="verLine" style="margin-top:10px">version —</div>
+      <div class="hint" id="diagLine">storage —</div>
+      <div class="hint" id="lastLine">last upload —</div>
     </div>
     <button class="big" id="bSave">Save &amp; sign in</button>
     <div style="height:10px"></div>
@@ -502,27 +504,81 @@ function toPDF(jpeg,w,h){
 const today = () => { const d=new Date(Date.now()+ (new Date().getTimezoneOffset()+330)*60000);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 
-/* ---- queue ---- */
-let db;
-const openDB = () => new Promise(res=>{ const r=indexedDB.open('signq',1);
-  r.onupgradeneeded=()=>r.result.createObjectStore('jobs',{keyPath:'id',autoIncrement:true});
-  r.onsuccess=()=>{ db=r.result; res(); }; });
-const store = m => db.transaction('jobs',m).objectStore('jobs');
-const qAdd = j => new Promise(r=>{ const q=store('readwrite').add(j); q.onsuccess=()=>r(); });
-const qAll = () => new Promise(r=>{ const q=store('readonly').getAll(); q.onsuccess=()=>r(q.result); });
-const qDel = id => new Promise(r=>{ const q=store('readwrite').delete(id); q.onsuccess=()=>r(); });
+/* ---- queue ----
+   IndexedDB is not dependable on every phone: in some iOS configurations it
+   fails or never opens. The queue therefore falls back to localStorage, and
+   nothing here is allowed to throw into the UI. */
+let db = null, dbState = 'opening';
+
+function openDB(){
+  return new Promise(res => {
+    let settled = false;
+    const done = (state) => { if(!settled){ settled = true; dbState = state; res(); } };
+    setTimeout(() => done(db ? 'idb' : 'timed out'), 4000);
+    try{
+      const r = indexedDB.open('signq', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('jobs', { keyPath:'id', autoIncrement:true });
+      r.onsuccess = () => { db = r.result; done('idb'); };
+      r.onerror = () => done('blocked');
+      r.onblocked = () => done('blocked');
+    }catch(e){ done('unavailable'); }
+  });
+}
+
+/* localStorage fallback */
+const LS_KEY = 'signq_jobs';
+function lsAll(){ try{ return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); }catch(e){ return []; } }
+function lsSave(v){ try{ localStorage.setItem(LS_KEY, JSON.stringify(v)); return true; }catch(e){ return false; } }
+
+function store(mode){ return db.transaction('jobs', mode).objectStore('jobs'); }
+
+async function qAdd(job){
+  if(db){
+    try{ return await new Promise((res, rej) => {
+      const q = store('readwrite').add(job); q.onsuccess = () => res(); q.onerror = () => rej(q.error);
+    }); }catch(e){ /* fall through to localStorage */ }
+  }
+  const all = lsAll();
+  all.push(Object.assign({ id: 'ls' + Date.now() + Math.random().toString(36).slice(2,6) }, job));
+  if(!lsSave(all)) throw new Error('phone storage is full — upload what is waiting first');
+}
+
+async function qAll(){
+  let out = [];
+  if(db){
+    try{ out = await new Promise((res, rej) => {
+      const q = store('readonly').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error);
+    }); }catch(e){ out = []; }
+  }
+  return out.concat(lsAll());
+}
+
+async function qDel(id){
+  if(db && typeof id === 'number'){
+    try{ return await new Promise((res) => {
+      const q = store('readwrite').delete(id); q.onsuccess = () => res(); q.onerror = () => res();
+    }); }catch(e){}
+  }
+  lsSave(lsAll().filter(j => j.id !== id));
+}
 
 async function paint(){
-  const j = await qAll();
-  $('qbadge').style.display = j.length ? '' : 'none'; $('qbadge').textContent = j.length;
-  $('qlist').innerHTML = j.length ? j.map(x=>
+  let j = [];
+  try{ j = await qAll(); }catch(e){}
+  const b = $('qbadge');
+  if(b){ b.style.display = j.length ? '' : 'none'; b.textContent = j.length; }
+  const l = $('qlist');
+  if(l) l.innerHTML = j.length ? j.map(x =>
     '<div class="q"><div><b>'+(x.invoice||'—')+'</b><small>'+(x.party||'—')+'</small></div><span>waiting</span></div>').join('')
     : '<div class="empty">Nothing waiting. Every scan is on the board.</div>';
 }
+
 async function flush(){
   if(!navigator.onLine || !P.gd) return;
-  for(const j of await qAll()){
-    try { await send(j); await qDel(j.id); }
+  let jobs = [];
+  try{ jobs = await qAll(); }catch(e){ return; }
+  for(const j of jobs){
+    try { const ack = await send(j); if(ack && ack.id) await qDel(j.id); }
     catch(e){ if(e.rejected){ await qDel(j.id); } else break; }
   }
   paint();
@@ -555,8 +611,8 @@ function drawGodowns(){
     P.gd = r.value; P.gdName = (l.filter(x=>x.key===r.value)[0]||{}).label || r.value; subtitle();
   });
 }
-$('navS').onclick = ()=>{ $('sUrl').value=P.url; $('sId').value=P.id; $('sPw').value=P.pw; drawGodowns(); show('scSet'); };
-$('navQ').onclick = async ()=>{ await paint(); show('scQueue'); };
+$('navS').onclick = ()=>{ $('sUrl').value=P.url; $('sId').value=P.id; $('sPw').value=P.pw; drawGodowns(); diag(); show('scSet'); };
+$('navQ').onclick = ()=>{ show('scQueue'); paint(); };
 $('bBack1').onclick = $('bBack2').onclick = ()=>show('scHome');
 $('bFlush').onclick = ()=>{ toast('Trying…'); flush(); };
 $('bSave').onclick = async ()=>{
@@ -571,7 +627,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '16';
+const APP_VERSION = '17';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -590,15 +646,26 @@ async function checkVersion(){
   }catch(e){}
 }
 
+function note(txt){
+  try{ localStorage.setItem('lastResult', new Date().toLocaleTimeString() + ' · ' + txt); }catch(e){}
+  const el = $('lastLine'); if(el) el.textContent = 'last upload: ' + txt;
+}
+function diag(){
+  const d = $('diagLine');
+  if(d) d.textContent = 'storage: ' + dbState + (lsAll().length ? ' · ' + lsAll().length + ' held locally' : '');
+  const l = $('lastLine');
+  if(l) l.textContent = 'last upload: ' + (localStorage.getItem('lastResult') || '—');
+}
+
 /* ---- boot ---- */
 subtitle();
 checkVersion();
 if(!P.id) setTimeout(()=>{ if(!P.id) show('scSet'); }, 400);
-openDB().then(paint).then(flush);
+openDB().then(() => { diag(); paint(); flush(); });
 if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=16"></script>
+<script src="station.js?v=17"></script>
 </body>
 </html>
