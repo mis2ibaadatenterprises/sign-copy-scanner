@@ -196,7 +196,7 @@
     </div>
     <div class="card">
       <h2>Tripod station</h2>
-      <label class="gd"><input type="checkbox" id="stTrim"> Trim to the edges of the bill and flatten it</label>
+      <label class="gd"><input type="checkbox" id="stTrim"> Trim the desk away from around the bill</label>
       <label class="gd"><input type="checkbox" id="stBw"> High-contrast black &amp; white (scanned look)</label>
       <div class="hint">Both off by default — the bill is kept as a normal photo.</div>
       <label class="gd"><input type="checkbox" id="stAuto"> Upload straight away (skip the check screen)</label>
@@ -535,10 +535,12 @@ $('bRetake').onclick = ()=>{ current=null; show('scHome'); };
 
 function toPDF(jpeg,w,h){
   const { jsPDF } = window.jspdf;
-  const land = w>h, doc = new jsPDF({orientation: land?'l':'p', unit:'pt', format:'a4'});
-  const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
-  const s=Math.min(pw/w, ph/h);
-  doc.addImage(jpeg,'JPEG',(pw-w*s)/2,(ph-h*s)/2,w*s,h*s);
+  /* The page is cut to the shape of the bill rather than padded onto A4, so
+     it fills the screen when opened instead of floating in white margins. */
+  const long = 1000, s = long / Math.max(w, h);
+  const pw = Math.round(w * s), ph = Math.round(h * s);
+  const doc = new jsPDF({ orientation: pw > ph ? 'l' : 'p', unit:'pt', format:[pw, ph] });
+  doc.addImage(jpeg, 'JPEG', 0, 0, pw, ph);
   return doc.output('datauristring').split(',')[1];
 }
 const today = () => { const d=new Date(Date.now()+ (new Date().getTimezoneOffset()+330)*60000);
@@ -757,7 +759,7 @@ $('bSave').onclick = async ()=>{
 /* ---- keeping phones current ----
    A stale copy on a phone is indistinguishable from a bug, so the app checks
    its own version on every open and clears itself out if it is behind. */
-const APP_VERSION = '20';
+const APP_VERSION = '21';
 async function checkVersion(){
   try{
     const v = (await (await fetch('version.txt?b=' + Date.now(), { cache:'reload' })).text()).trim();
@@ -832,6 +834,6 @@ if(P.id && P.pw && !P.tok) signIn().catch(()=>{});
 if('serviceWorker' in navigator)
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(()=>{});
 </script>
-<script src="station.js?v=20"></script>
+<script src="station.js?v=21"></script>
 </body>
 </html>

@@ -530,71 +530,50 @@ addEventListener('DOMContentLoaded', () => {
  * corners of a sheet of paper even when it sits at an angle.
  */
 function detectPage(src){
-  const W = 400, sc = W / src.width, H = Math.max(1, Math.round(src.height * sc));
+  const W = 500, sc = W / src.width, H = Math.max(1, Math.round(src.height * sc));
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
-  c.getContext('2d').drawImage(src, 0, 0, W, H);
-  const d = c.getContext('2d').getImageData(0,0,W,H).data;
+  const x = c.getContext('2d');
+  x.drawImage(src, 0, 0, W, H);
+  const d = x.getImageData(0, 0, W, H).data;
 
-  const g = new Uint8Array(W*H), hist = new Uint32Array(256);
-  for(let i=0,j=0; j<W*H; i+=4, j++){
-    g[j] = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
-    hist[g[j]]++;
+  const g = new Float64Array(W * H);
+  for(let i = 0, j = 0; j < W * H; i += 4, j++)
+    g[j] = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+
+  /* Brightness cannot separate white paper from a white desk, but an edge
+     can. Sum the vertical edges down each column and the horizontal edges
+     across each row; the page boundary is then the OUTERMOST strong edge,
+     not the strongest one — the strongest is usually a table rule or the QR
+     block inside the bill, and cropping to that would cut the bill in half. */
+  const col = new Float64Array(W), row = new Float64Array(H);
+  for(let y = 1; y < H - 1; y++){
+    for(let xx = 1; xx < W - 1; xx++){
+      const i = y * W + xx;
+      const gx = Math.abs(g[i + 1] - g[i - 1]);
+      const gy = Math.abs(g[i + W] - g[i - W]);
+      col[xx] += gx; row[y] += gy;
+    }
   }
+  const outer = (prof, n) => {
+    let max = 0;
+    for(let i = 0; i < n; i++) if(prof[i] > max) max = prof[i];
+    const thr = max * 0.25;
+    let a = 0, b = n - 1;
+    while(a < n && prof[a] <= thr) a++;
+    while(b > a && prof[b] <= thr) b--;
+    return [a, b];
+  };
+  const [x0, x1] = outer(col, W);
+  const [y0, y1] = outer(row, H);
 
-  // Otsu: the split that best separates paper from background
-  const total = W*H;
-  let sum = 0; for(let i=0;i<256;i++) sum += i*hist[i];
-  let sumB = 0, wB = 0, best = 0, thr = 128;
-  for(let t=0;t<256;t++){
-    wB += hist[t]; if(!wB) continue;
-    const wF = total - wB; if(!wF) break;
-    sumB += t*hist[t];
-    const mB = sumB/wB, mF = (sum-sumB)/wF, v = wB*wF*(mB-mF)*(mB-mF);
-    if(v > best){ best = v; thr = t; }
-  }
-
-  // flood the bright region from the middle of the frame
-  const seen = new Uint8Array(W*H);
-  const stack = [];
-  for(let y = (H*0.35)|0; y < (H*0.65|0); y++)
-    for(let x = (W*0.35)|0; x < (W*0.65|0); x++)
-      if(g[y*W+x] > thr){ stack.push(y*W+x); seen[y*W+x] = 1; break; }
-  if(!stack.length) return null;
-
-  let n = 0;
-  let tl=[1e9,0], br=[-1e9,0], tr=[-1e9,0], bl=[1e9,0];
-  const push = (i) => { if(i>=0 && i<W*H && !seen[i] && g[i] > thr){ seen[i]=1; stack.push(i); } };
-  while(stack.length){
-    const i = stack.pop(), x = i % W, y = (i / W) | 0;
-    n++;
-    if(x+y < tl[0]) tl = [x+y, x, y];
-    if(x+y > br[0]) br = [x+y, x, y];
-    if(x-y > tr[0]) tr = [x-y, x, y];
-    if(x-y < bl[0]) bl = [x-y, x, y];
-    if(x > 0)   push(i-1);
-    if(x < W-1) push(i+1);
-    if(y > 0)   push(i-W);
-    if(y < H-1) push(i+W);
-  }
-
-  if(n < total * 0.25) return null;                 // too small to be the page
-  const quad = [tl, tr, br, bl].map(p => [p[1]/W, p[2]/H]);
-
-  // a page is convex and roughly rectangular; reject anything odd
-  const side = (a,b) => Math.hypot((quad[a][0]-quad[b][0]), (quad[a][1]-quad[b][1]));
-  const top = side(0,1), bot = side(3,2), left = side(0,3), right = side(1,2);
-  if(Math.min(top,bot) < 0.35 || Math.min(left,right) < 0.20) return null;
-  if(Math.max(top,bot) / Math.min(top,bot) > 1.6) return null;
-  if(Math.max(left,right) / Math.min(left,right) > 1.6) return null;
-
-  // breathe a little so no ink sits on the cut line
-  const cx = (quad[0][0]+quad[1][0]+quad[2][0]+quad[3][0])/4;
-  const cy = (quad[0][1]+quad[1][1]+quad[2][1]+quad[3][1])/4;
-  return quad.map(([x,y]) => [
-    Math.min(1, Math.max(0, cx + (x-cx)*1.012)),
-    Math.min(1, Math.max(0, cy + (y-cy)*1.012))
-  ]);
+  const w = (x1 - x0) / W, h = (y1 - y0) / H;
+  if(w * h < 0.35) return null;          // too small to be the page: do not risk it
+  if(w * h > 0.95) return null;          // nothing worth trimming
+  const pad = 0.012;
+  const L = Math.max(0, x0 / W - pad), R = Math.min(1, x1 / W + pad);
+  const T = Math.max(0, y0 / H - pad), B = Math.min(1, y1 / H + pad);
+  return [[L, T], [R, T], [R, B], [L, B]];
 }
 
 /* Returns a flat, trimmed, scanned-looking page — or null to keep the photo
